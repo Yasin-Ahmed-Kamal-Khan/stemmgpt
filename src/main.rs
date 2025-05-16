@@ -1,165 +1,124 @@
-use std::{thread, time::Duration};
-use clap::{Parser, ValueEnum};
 use crossterm::{
-    cursor, queue,
-    style::{Color, Print, SetForegroundColor},
-    terminal::{Clear, ClearType},
-    ExecutableCommand,
+    cursor::{Hide, MoveTo, Show},
+    event::{poll, read, Event, KeyCode},
+    execute,
+    terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use rand::Rng;
-use std::io::{stdout, Write};
+use include_dir::{include_dir, Dir};
+use std::{
+    io::{self, stdout, Write},
+    thread,
+    time::Duration,
+};
 
-#[derive(Parser)]
-#[command(version, about = "An animated cowsay-like program")]
-struct Cli {
-    /// The message for the cow to say
-    message: String,
+// Include the entire frames directory at compile time
+static FRAMES_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/src/frames");
 
-    /// Animation style
-    #[arg(short, long, value_enum, default_value_t = AnimationStyle::Blink)]
-    animation: AnimationStyle,
+fn main() -> io::Result<()> {
+    // Enter alternate screen and hide cursor
+    execute!(stdout(), EnterAlternateScreen, Hide)?;
 
-    /// Animation speed in milliseconds
-    #[arg(short = 's', long, default_value_t = 300)]
-    speed: u64,
-}
+    // Load frames from the included directory
+    let mut frames = Vec::new();
 
-#[derive(Copy, Clone, ValueEnum, Debug)]
-enum AnimationStyle {
-    Blink,
-    Wave,
-    ColorCycle,
-    Random,
-}
+    // Get all .txt files from the included directory
+    let mut files = FRAMES_DIR
+        .files()
+        .filter(|file| {
+            file.path().extension().and_then(|ext| ext.to_str()) == Some("txt")
+        })
+        .collect::<Vec<_>>();
 
-fn main() -> std::io::Result<()> {
-    let args = Cli::parse();
-    let mut stdout = stdout();
+    // Sort files by name to ensure proper sequence
+    files.sort_by_key(|file| file.path().to_owned());
 
-    // Hide cursor during animation
-    stdout.execute(cursor::Hide)?;
-
-    // Animation loop
-    for i in 0..20 {
-        // Clear previous frame
-        queue!(
-            stdout,
-            Clear(ClearType::All),
-            cursor::MoveTo(0, 0)
-        )?;
-
-        // Draw speech bubble
-        draw_speech_bubble(&args.message, &mut stdout, i, &args)?;
-
-        // Draw animated cow
-        draw_cow(&mut stdout, i, &args)?;
-
-        stdout.flush()?;
-        thread::sleep(Duration::from_millis(args.speed));
-    }
-
-    // Show cursor again
-    stdout.execute(cursor::Show)?;
-
-    Ok(())
-}
-
-fn draw_speech_bubble(
-    message: &str,
-    stdout: &mut std::io::Stdout,
-    frame: i32,
-    args: &Cli,
-) -> std::io::Result<()> {
-    let lines: Vec<&str> = message.split('\n').collect();
-    let max_length = lines.iter().map(|l| l.len()).max().unwrap_or(0);
-
-    // Top border
-    queue!(stdout, Print(" "))?;
-    for _ in 0..max_length + 2 {
-        match args.animation {
-            AnimationStyle::ColorCycle => {
-                let color = Color::Rgb {
-                    r: ((frame * 10) % 255) as u8,
-                    g: ((frame * 20) % 255) as u8,
-                    b: ((frame * 30) % 255) as u8,
-                };
-                queue!(stdout, SetForegroundColor(color), Print("═"),)?;
-            }
-            _ => queue!(stdout, Print("═"))?,
+    // Load the contents of each file
+    for file in files {
+        if let Some(content) = file.contents_utf8() {
+            frames.push(content);
         }
     }
-    queue!(stdout, Print("\n"))?;
 
-    // Message lines
-    for line in &lines {
-        queue!(stdout, Print(" "))?;
-        match args.animation {
-            AnimationStyle::Wave => {
-                for (i, c) in line.chars().enumerate() {
-                    let y_offset = ((frame as f32 * 0.5 + i as f32 * 0.3).sin() * 2.0) as i32;
-                    queue!(
-                        stdout,
-                        cursor::MoveTo(2 + i as u16, 1 + y_offset as u16),
-                        Print(c)
-                    )?;
+    // Fallback to default frames if no files were found
+    if frames.is_empty() {
+        frames.push(
+            r#"
+    No animation
+    frames found!
+
+    Place .txt files
+    in the frames
+    directory.
+            "#,
+        );
+    }
+
+    // Get terminal size
+    let (width, height) = crossterm::terminal::size()?;
+
+    let mut frame_index = 0;
+    let mut running = true;
+
+    while running {
+        // Check for exit key press (q)
+        if poll(Duration::from_millis(100))? {
+            if let Event::Key(key_event) = read()? {
+                if key_event.code == KeyCode::Char('q') {
+                    running = false;
                 }
             }
-            _ => queue!(stdout, Print(format!(" {} ", line)))?,
         }
-        queue!(stdout, Print("\n"))?;
-    }
 
-    // Bottom border
-    queue!(stdout, Print(" "))?;
-    for _ in 0..max_length + 2 {
-        queue!(stdout, Print("═"))?;
-    }
-    queue!(stdout, Print("\n"))?;
+        // Clear screen
+        execute!(stdout(), Clear(ClearType::All))?;
 
-    Ok(())
-}
+        // Get current frame
+        let frame = frames[frame_index];
 
-fn draw_cow(stdout: &mut std::io::Stdout, frame: i32, args: &Cli) -> std::io::Result<()> {
-    // println!("args.animation = {:?}", args.animation);
+        // Draw the frame centered
+        let frame_lines: Vec<&str> = frame.lines().collect();
+        let max_line_width = frame_lines.iter().map(|line| line.len()).max().unwrap_or(0);
 
-    let cow_art = match args.animation {
-        AnimationStyle::Blink if frame % 4 < 2 => r"
-     \   ^__^
-      \  (oo)\_______
-         (__)\       )\/\
-             ||----w |
-             ||     ||
-        ".to_string(),
-        AnimationStyle::Random => {
-            let mut rng = rand::thread_rng();
-            let eyes = if rng.gen_bool(0.5) { "oo" } else { "^^" };
-            format!(
+        for (i, line) in frame_lines.iter().enumerate() {
+            let x = (width as usize - max_line_width) / 2;
+            let y = (height as usize - frame_lines.len()) / 2 + i;
 
-r"              ^__^
-                ({})\_______
-                (__)\       )\/\
-                    ||----w |
-                    ||     ||
-        ",
-                eyes
-            )
-        } // trigger this case with cargo run -- --animation random
-        _ => r"
-     \   ^__^
-      \  (oo)\_______
-         (__)\       )\/\
-             ||----w |
-             ||     ||
-        ".to_string(),
-    };
+            if y < height as usize {
+                execute!(
+                    stdout(),
+                    MoveTo(x as u16, y as u16),
+                    crossterm::style::Print(line)
+                )?;
+            }
+        }
 
-    for (i, line) in cow_art.trim_start().lines().enumerate() {
-        queue!(
-            stdout,
-            cursor::MoveTo(0, 3 + i as u16),
-            Print(line)
+        // Add instructions at the bottom
+        execute!(
+            stdout(),
+            MoveTo(2, height - 2),
+            crossterm::style::Print("Press 'q' to quit")
         )?;
+
+        // Show frame count
+        let frame_info = format!("Frame: {}/{}", frame_index + 1, frames.len());
+        execute!(
+            stdout(),
+            MoveTo(width - frame_info.len() as u16 - 2, height - 2),
+            crossterm::style::Print(frame_info)
+        )?;
+
+        // Flush to ensure drawing happens
+        stdout().flush()?;
+
+        // Wait a bit before showing the next frame
+        thread::sleep(Duration::from_millis(200));
+
+        // Move to next frame
+        frame_index = (frame_index + 1) % frames.len();
     }
+
+    // Clean up terminal
+    execute!(stdout(), Show, LeaveAlternateScreen)?;
 
     Ok(())
 }
