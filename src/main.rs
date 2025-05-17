@@ -1,8 +1,11 @@
+use std::panic;
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{poll, read, Event, KeyCode},
     execute,
-    terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen
+    },
 };
 use include_dir::{include_dir, Dir};
 use std::{
@@ -14,11 +17,7 @@ use std::{
 // Include the entire frames directory at compile time
 static FRAMES_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/src/frames");
 
-fn main() -> io::Result<()> {
-    // Enter alternate screen and hide cursor
-    execute!(stdout(), EnterAlternateScreen, Hide)?;
-
-    // Load frames from the included directory
+fn get_frames() -> Vec<String> {
     let mut frames = Vec::new();
 
     // Get all .txt files from the included directory
@@ -35,7 +34,7 @@ fn main() -> io::Result<()> {
     // Load the contents of each file
     for file in files {
         if let Some(content) = file.contents_utf8() {
-            frames.push(content);
+            frames.push(content.to_string());
         }
     }
 
@@ -49,9 +48,27 @@ fn main() -> io::Result<()> {
     Place .txt files
     in the frames
     directory.
-            "#,
+            "#.to_string(),
         );
     }
+
+    return frames
+}
+
+fn main() -> io::Result<()> {
+    // Set up panic hook to clean up the terminal
+    enable_raw_mode()?;
+
+    panic::set_hook(Box::new(|panic_info| {
+        disable_raw_mode().expect("Failed to disable raw mode on panic");
+        eprintln!("Panic occurred: {}", panic_info);
+    }));
+
+    // Enter alternate screen and hide cursor
+    execute!(stdout(), EnterAlternateScreen, Hide)?;
+
+    // Load frames from the included directory
+    let frames = get_frames();
 
     // Get terminal size
     let (width, height) = crossterm::terminal::size()?;
@@ -60,37 +77,19 @@ fn main() -> io::Result<()> {
     let mut running = true;
 
     while running {
-        // Check for exit key press (q)
         if poll(Duration::from_millis(100))? {
-            if let Event::Key(key_event) = read()? {
-                if key_event.code == KeyCode::Char('q') {
-                    running = false;
+            match read()? {
+                Event::Key(key_event) => {
+                    if matches!(key_event.code, KeyCode::Char('q') | KeyCode::Char('Q')) {
+                        running = false;
+                    }
                 }
+                _ => {}
             }
-        }
-
-        // Clear screen
+        }        // Clear screen
         execute!(stdout(), Clear(ClearType::All))?;
 
-        // Get current frame
-        let frame = frames[frame_index];
-
-        // Draw the frame centered
-        let frame_lines: Vec<&str> = frame.lines().collect();
-        let max_line_width = frame_lines.iter().map(|line| line.len()).max().unwrap_or(0);
-
-        for (i, line) in frame_lines.iter().enumerate() {
-            let x = (width as usize - max_line_width) / 2;
-            let y = (height as usize - frame_lines.len()) / 2 + i;
-
-            if y < height as usize {
-                execute!(
-                    stdout(),
-                    MoveTo(x as u16, y as u16),
-                    crossterm::style::Print(line)
-                )?;
-            }
-        }
+        let _ = draw_to_terminal(&frames, frame_index, width, height);
 
         // Add instructions at the bottom
         execute!(
@@ -119,6 +118,30 @@ fn main() -> io::Result<()> {
 
     // Clean up terminal
     execute!(stdout(), Show, LeaveAlternateScreen)?;
+
+    let _ = disable_raw_mode();
+    Ok(())
+}
+
+
+fn draw_to_terminal(frames: &Vec<String>, frame_index: usize, width: u16, height: u16) -> io::Result<()> {
+    let width = width as usize;
+    let height = height as usize;
+    let frame = &frames[frame_index];
+    let frame_lines: Vec<&str> = frame.lines().collect();
+    let max_line_width = frame_lines.iter().map(|line| line.len()).max().unwrap_or(0);
+    for (i, line) in frame_lines.iter().enumerate() {
+        let x = (width - max_line_width) / 2;
+        let y = (height - frame_lines.len()) / 2 + i;
+
+        if y < height {
+            execute!(
+                stdout(),
+                MoveTo(x as u16, y as u16),
+                crossterm::style::Print(line)
+            )?;
+        }
+    }
 
     Ok(())
 }
