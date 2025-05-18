@@ -1,18 +1,18 @@
-use std::panic;
+
+use std::io::{self, stdout, Write};
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;use std::panic;
+use crossterm::style::Print;
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
-    event::{poll, read, Event, KeyCode},
+    event::{self, KeyEvent, poll, read, Event, KeyCode},
     execute,
     terminal::{
         disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen
     },
 };
 use include_dir::{include_dir, Dir};
-use std::{
-    io::{self, stdout, Write},
-    thread,
-    time::Duration,
-};
 
 // Include the entire frames directory at compile time
 static FRAMES_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/src/frames");
@@ -76,26 +76,47 @@ fn main() -> io::Result<()> {
     let mut frame_index = 0;
     let mut running = true;
 
-    while running {
-        if poll(Duration::from_millis(100))? {
-            match read()? {
-                Event::Key(key_event) => {
-                    if matches!(key_event.code, KeyCode::Char('q') | KeyCode::Char('Q')) {
-                        running = false;
-                    }
+    // Channel for communication between threads
+    let (tx, rx) = mpsc::channel();
+
+    // Spawn input thread
+    thread::spawn(move || {
+        loop {
+            if event::poll(Duration::from_millis(100)).unwrap() {
+                if let Event::Key(KeyEvent { code, .. }) = event::read().unwrap() {
+                    tx.send(code).unwrap();
                 }
+            }
+        }
+    });
+
+    let mut input_buffer = String::new();
+    loop {
+        // Check for new input
+        if let Ok(key) = rx.try_recv() {
+            match key {
+                KeyCode::Char('q' | 'Q') if input_buffer.is_empty() => break,
+                KeyCode::Esc => break,
+                KeyCode::Char(c) => input_buffer.push(c),
+                KeyCode::Enter => {
+                    println!("\nYou typed: {}", input_buffer);
+                    input_buffer.clear();
+                },
                 _ => {}
             }
-        }        // Clear screen
-        execute!(stdout(), Clear(ClearType::All))?;
+        }
+
+        // Clear and redraw
+        execute!(stdout(), MoveTo(0, 0), crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
 
         let _ = draw_to_terminal(&frames, frame_index, width, height);
 
+        // Show current input
         // Add instructions at the bottom
         execute!(
             stdout(),
             MoveTo(2, height - 2),
-            crossterm::style::Print("Press 'q' to quit")
+            Print(format!("\n> {}", input_buffer)),
         )?;
 
         // Show frame count
@@ -103,18 +124,31 @@ fn main() -> io::Result<()> {
         execute!(
             stdout(),
             MoveTo(width - frame_info.len() as u16 - 2, height - 2),
+            // crossterm::style::Print("Press 'q' to quit"),
             crossterm::style::Print(frame_info)
         )?;
 
-        // Flush to ensure drawing happens
-        stdout().flush()?;
-
-        // Wait a bit before showing the next frame
-        thread::sleep(Duration::from_millis(200));
-
         // Move to next frame
         frame_index = (frame_index + 1) % frames.len();
+        thread::sleep(Duration::from_millis(50));
     }
+
+
+
+    // while running {
+    //     if poll(Duration::from_millis(100))? {
+    //         match read()? {
+    //             Event::Key(key_event) => {
+    //                 if matches!(key_event.code, KeyCode::Char('q') | KeyCode::Char('Q')) {
+    //                     running = false;
+    //                 }
+    //             }
+    //             _ => {}
+    //         }
+    //     }        // Clear screen
+    //     execute!(stdout(), Clear(ClearType::All))?;
+    //     let _ = draw_to_terminal(&frames, frame_index, width, height);
+    // }
 
     // Clean up terminal
     execute!(stdout(), Show, LeaveAlternateScreen)?;
