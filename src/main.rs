@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 use std::io;
-use ratatui::Frame;
+use ratatui::{layout::Alignment, style::Style, widgets::{canvas::Context, Borders, Paragraph}, Frame};
 use color_eyre::Result;
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, MouseEventKind,
@@ -28,7 +28,15 @@ use ratatui::widgets::canvas::{Canvas, Circle, Map, MapResolution, Points, Recta
 use ratatui::widgets::{Block, Widget};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
+use include_dir::{include_dir, Dir};
 
+static FRAMES_DIR: Dir = include_dir!("src/frames/");
+
+fn get_frames() -> Vec<&'static str> {
+    FRAMES_DIR.files()
+        .filter_map(|f| f.contents_utf8())
+        .collect()
+}
 fn main() -> Result<()> {
     color_eyre::install()?;
     stdout().execute(EnableMouseCapture)?;
@@ -46,6 +54,10 @@ struct App {
     exit: bool,
     x: f64,
     y: f64,
+    frames: Vec<&'static str>,
+    current_frame: usize,
+    frame_counter: usize,
+    frame_delay: usize,
     ball: Circle,
     playground: Rect,
     vx: f64,
@@ -73,6 +85,10 @@ impl App {
             marker: Marker::Dot,
             points: vec![],
             is_drawing: false,
+            frames: get_frames(),
+            current_frame: 0,
+            frame_counter: 0,
+            frame_delay: 0,
         }
     }
 
@@ -147,7 +163,7 @@ impl App {
         self.ball.y += self.vy;
     }
 
-    fn render(&self, frame: &mut Frame) {
+    fn render(&mut self, frame: &mut Frame) {
         let header = Text::from_iter([
             "Canvas Example".bold(),
             "<q> Quit | <enter> Change Marker | <hjkl> Move".into(),
@@ -181,8 +197,48 @@ impl App {
 
         frame.render_widget(self.map_canvas(), map);
         frame.render_widget(self.draw_canvas(draw), draw);
-        frame.render_widget(self.pong_canvas(), pong);
+        frame.render_widget(App::ascii_art_widget(self, pong.width.into()), pong);
         frame.render_widget(self.boxes_canvas(boxes), boxes);
+    }
+
+    fn ascii_art_widget(app: &mut App, box_width: usize) -> Paragraph {
+        let current_frame = &app.frames[app.current_frame];
+        let padded_frame = Self::pad_ascii_frame(current_frame, box_width);
+        app.current_frame = (app.current_frame + 1) % app.frames.len();
+        Paragraph::new(padded_frame)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("ASCII Art")
+            )
+            .alignment(Alignment::Left)
+
+    }
+
+    fn pad_ascii_frame(frame: &str, target_width: usize) -> String {
+        // Find the longest line in the ASCII frame
+        let frame_width = frame.lines()
+            .map(|line| line.len())
+            .max()
+            .unwrap_or(0);
+
+        // Calculate equal left/right padding
+        let total_padding = target_width.saturating_sub(frame_width);
+        let left_pad = total_padding / 2;
+        let right_pad = total_padding - left_pad;
+
+        // Apply padding to each line
+        frame.lines()
+            .map(|line| {
+                format!(
+                    "{}{}{}",
+                    " ".repeat(left_pad),
+                    line,
+                    " ".repeat(right_pad)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn map_canvas(&self) -> impl Widget + '_ {
@@ -222,6 +278,14 @@ impl App {
                     color: Color::White,
                 });
             })
+    }
+
+    fn blank_canvas(&self) -> impl Widget {
+        let canvas: Canvas<fn(&mut Context)> = Canvas::default()
+            .x_bounds([0.0, 100.0])  // Define X-axis bounds
+            .y_bounds([0.0, 100.0]);  // Define Y-axis bounds
+            // No .paint() call means nothing will be drawn
+        canvas
     }
 
     fn pong_canvas(&self) -> impl Widget + '_ {
