@@ -1,181 +1,275 @@
-
-use std::io::{self, stdout, Write};
-use std::sync::mpsc;
-use std::thread;
-use std::time::Duration;use std::panic;
-use crossterm::style::Print;
-use crossterm::{
-    cursor::{Hide, MoveTo, Show},
-    event::{self, KeyEvent, poll, read, Event, KeyCode},
-    execute,
-    terminal::{
-        disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen
-    },
+/// A Ratatui example that demonstrates how to draw on a canvas.
+///
+/// This example demonstrates how to draw various shapes such as rectangles, circles, and lines
+/// on a canvas. It also demonstrates how to draw a map.
+///
+/// This example runs with the Ratatui library code in the branch that you are currently
+/// reading. See the [`latest`] branch for the code which works with the most recent Ratatui
+/// release.
+///
+/// [`latest`]: https://github.com/ratatui/ratatui/tree/latest
+use std::{
+    io::stdout,
+    time::{Duration, Instant},
 };
-use include_dir::{include_dir, Dir};
+use std::io;
+use ratatui::Frame;
+use color_eyre::Result;
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, MouseEventKind,
+};
+use crossterm::ExecutableCommand;
+use itertools::Itertools;
+use ratatui::layout::{Constraint, Layout, Position, Rect};
+use ratatui::style::{Color, Stylize};
+use ratatui::symbols::Marker;
+use ratatui::text::Text;
+use ratatui::widgets::canvas::{Canvas, Circle, Map, MapResolution, Points, Rectangle};
+use ratatui::widgets::{Block, Widget};
+use ratatui::Terminal;
+use ratatui::backend::CrosstermBackend;
 
-// Include the entire frames directory at compile time
-static FRAMES_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/src/frames");
+fn main() -> Result<()> {
+    color_eyre::install()?;
+    stdout().execute(EnableMouseCapture)?;
+    let backend = CrosstermBackend::new(std::io::stdout());
+    let mut terminal = Terminal::new(backend)?;
+    terminal.clear()?;
+    let app_result = App::new().run(terminal);
+    crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
+    crossterm::terminal::disable_raw_mode()?;
+    stdout().execute(DisableMouseCapture)?;
+    app_result
+}
 
-fn get_frames() -> Vec<String> {
-    let mut frames = Vec::new();
+struct App {
+    exit: bool,
+    x: f64,
+    y: f64,
+    ball: Circle,
+    playground: Rect,
+    vx: f64,
+    vy: f64,
+    marker: Marker,
+    points: Vec<Position>,
+    is_drawing: bool,
+}
 
-    // Get all .txt files from the included directory
-    let mut files = FRAMES_DIR
-        .files()
-        .filter(|file| {
-            file.path().extension().and_then(|ext| ext.to_str()) == Some("txt")
-        })
-        .collect::<Vec<_>>();
-
-    // Sort files by name to ensure proper sequence
-    files.sort_by_key(|file| file.path().to_owned());
-
-    // Load the contents of each file
-    for file in files {
-        if let Some(content) = file.contents_utf8() {
-            frames.push(content.to_string());
+impl App {
+    fn new() -> Self {
+        Self {
+            exit: false,
+            x: 0.0,
+            y: 0.0,
+            ball: Circle {
+                x: 20.0,
+                y: 40.0,
+                radius: 10.0,
+                color: Color::Yellow,
+            },
+            playground: Rect::new(10, 10, 200, 100),
+            vx: 1.0,
+            vy: 1.0,
+            marker: Marker::Dot,
+            points: vec![],
+            is_drawing: false,
         }
     }
 
-    // Fallback to default frames if no files were found
-    if frames.is_empty() {
-        frames.push(
-            r#"
-    No animation
-    frames found!
-
-    Place .txt files
-    in the frames
-    directory.
-            "#.to_string(),
-        );
+    pub fn run(mut self, mut terminal: Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
+        let tick_rate = Duration::from_millis(16);
+        let mut last_tick = Instant::now();
+        while !self.exit {
+            terminal.draw(|frame| self.render(frame))?;
+            let timeout = tick_rate.saturating_sub(last_tick.elapsed());
+            if !event::poll(timeout)? {
+                self.on_tick();
+                last_tick = Instant::now();
+                continue;
+            }
+            match event::read()? {
+                Event::Key(key) => self.handle_key_event(key),
+                Event::Mouse(event) => self.handle_mouse_event(event),
+                _ => (),
+            }
+        }
+        Ok(())
     }
 
-    return frames
-}
+    fn handle_key_event(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => self.exit = true,
+            KeyCode::Char('j') | KeyCode::Down => self.y += 1.0,
+            KeyCode::Char('k') | KeyCode::Up => self.y -= 1.0,
+            KeyCode::Char('l') | KeyCode::Right => self.x += 1.0,
+            KeyCode::Char('h') | KeyCode::Left => self.x -= 1.0,
+            KeyCode::Enter => self.cycle_marker(),
+            _ => {}
+        }
+    }
 
-fn main() -> io::Result<()> {
-    // Set up panic hook to clean up the terminal
-    enable_raw_mode()?;
+    fn handle_mouse_event(&mut self, event: event::MouseEvent) {
+        match event.kind {
+            MouseEventKind::Down(_) => self.is_drawing = true,
+            MouseEventKind::Up(_) => self.is_drawing = false,
+            MouseEventKind::Drag(_) => {
+                self.points.push(Position::new(event.column, event.row));
+            }
+            _ => {}
+        }
+    }
 
-    panic::set_hook(Box::new(|panic_info| {
-        disable_raw_mode().expect("Failed to disable raw mode on panic");
-        eprintln!("Panic occurred: {}", panic_info);
-    }));
+    const fn cycle_marker(&mut self) {
+        self.marker = match self.marker {
+            Marker::Dot => Marker::Braille,
+            Marker::Braille => Marker::Block,
+            Marker::Block => Marker::HalfBlock,
+            Marker::HalfBlock => Marker::Bar,
+            Marker::Bar => Marker::Dot,
+        };
+    }
 
-    // Enter alternate screen and hide cursor
-    execute!(stdout(), EnterAlternateScreen, Hide)?;
+    fn on_tick(&mut self) {
+        // bounce the ball by flipping the velocity vector
+        let ball = &self.ball;
+        let playground = self.playground;
+        if ball.x - ball.radius < f64::from(playground.left())
+            || ball.x + ball.radius > f64::from(playground.right())
+        {
+            self.vx = -self.vx;
+        }
+        if ball.y - ball.radius < f64::from(playground.top())
+            || ball.y + ball.radius > f64::from(playground.bottom())
+        {
+            self.vy = -self.vy;
+        }
+        self.ball.x += self.vx;
+        self.ball.y += self.vy;
+    }
 
-    // Load frames from the included directory
-    let frames = get_frames();
+    fn render(&self, frame: &mut Frame) {
+        let header = Text::from_iter([
+            "Canvas Example".bold(),
+            "<q> Quit | <enter> Change Marker | <hjkl> Move".into(),
+        ]);
 
-    // Get terminal size
-    let (width, height) = crossterm::terminal::size()?;
 
-    let mut frame_index = 0;
-    let mut running = true;
+        let base_area = frame.size();
 
-    // Channel for communication between threads
-    let (tx, rx) = mpsc::channel();
+        // 2. Create your main layout divisions
+        let main_layout = Layout::vertical([
+            Constraint::Length(3),  // Header
+            Constraint::Min(0),     // Content area
+            Constraint::Length(1)   // Footer
+        ]).split(base_area);  // Split the frame's Rect
 
-    // Spawn input thread
-    thread::spawn(move || {
-        loop {
-            if event::poll(Duration::from_millis(100)).unwrap() {
-                if let Event::Key(KeyEvent { code, .. }) = event::read().unwrap() {
-                    tx.send(code).unwrap();
+
+        let vertical = Layout::vertical([
+            Constraint::Length(header.height() as u16),
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
+        ]).split(main_layout[1]);
+
+        // Destructure the chunks
+        let [text_area, up, down] = [vertical[0], vertical[1], vertical[2]];
+        frame.render_widget(header.centered(), text_area);
+
+        let horizontal =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]);
+        let [draw, pong] = horizontal.areas(up);
+        let [map, boxes] = horizontal.areas(down);
+
+        frame.render_widget(self.map_canvas(), map);
+        frame.render_widget(self.draw_canvas(draw), draw);
+        frame.render_widget(self.pong_canvas(), pong);
+        frame.render_widget(self.boxes_canvas(boxes), boxes);
+    }
+
+    fn map_canvas(&self) -> impl Widget + '_ {
+        Canvas::default()
+            .block(Block::bordered().title("World"))
+            .marker(self.marker)
+            .paint(|ctx| {
+                ctx.draw(&Map {
+                    color: Color::Green,
+                    resolution: MapResolution::High,
+                });
+                ctx.print(self.x, -self.y, "You are here".yellow());
+            })
+            .x_bounds([-180.0, 180.0])
+            .y_bounds([-90.0, 90.0])
+    }
+
+    fn draw_canvas(&self, area: Rect) -> impl Widget + '_ {
+        Canvas::default()
+            .block(Block::bordered().title("Draw here"))
+            .marker(self.marker)
+            .x_bounds([0.0, f64::from(area.width)])
+            .y_bounds([0.0, f64::from(area.height)])
+            .paint(move |ctx| {
+                let points = self
+                    .points
+                    .iter()
+                    .map(|p| {
+                        (
+                            f64::from(p.x) - f64::from(area.left()),
+                            f64::from(area.bottom()) - f64::from(p.y),
+                        )
+                    })
+                    .collect_vec();
+                ctx.draw(&Points {
+                    coords: &points,
+                    color: Color::White,
+                });
+            })
+    }
+
+    fn pong_canvas(&self) -> impl Widget + '_ {
+        Canvas::default()
+            .block(Block::bordered().title("Pong"))
+            .marker(self.marker)
+            .paint(|ctx| {
+                ctx.draw(&self.ball);
+            })
+            .x_bounds([10.0, 210.0])
+            .y_bounds([10.0, 110.0])
+    }
+
+    fn boxes_canvas(&self, area: Rect) -> impl Widget {
+        let left = 0.0;
+        let right = f64::from(area.width);
+        let bottom = 0.0;
+        let top = f64::from(area.height).mul_add(2.0, -4.0);
+        Canvas::default()
+            .block(Block::bordered().title("Rects"))
+            .marker(self.marker)
+            .x_bounds([left, right])
+            .y_bounds([bottom, top])
+            .paint(|ctx| {
+                for i in 0..=11 {
+                    ctx.draw(&Rectangle {
+                        x: f64::from(i * i + 3 * i) / 2.0 + 2.0,
+                        y: 2.0,
+                        width: f64::from(i),
+                        height: f64::from(i),
+                        color: Color::Red,
+                    });
+                    ctx.draw(&Rectangle {
+                        x: f64::from(i * i + 3 * i) / 2.0 + 2.0,
+                        y: 21.0,
+                        width: f64::from(i),
+                        height: f64::from(i),
+                        color: Color::Blue,
+                    });
                 }
-            }
-        }
-    });
-
-    let mut input_buffer = String::new();
-    loop {
-        // Check for new input
-        if let Ok(key) = rx.try_recv() {
-            match key {
-                KeyCode::Char('q' | 'Q') if input_buffer.is_empty() => break,
-                KeyCode::Esc => break,
-                KeyCode::Char(c) => input_buffer.push(c),
-                KeyCode::Enter => {
-                    println!("\nYou typed: {}", input_buffer);
-                    input_buffer.clear();
-                },
-                _ => {}
-            }
-        }
-
-        // Clear and redraw
-        execute!(stdout(), MoveTo(0, 0), crossterm::terminal::Clear(crossterm::terminal::ClearType::All))?;
-
-        let _ = draw_to_terminal(&frames, frame_index, width, height);
-
-        // Show current input
-        // Add instructions at the bottom
-        execute!(
-            stdout(),
-            MoveTo(2, height - 2),
-            Print(format!("\n> {}", input_buffer)),
-        )?;
-
-        // Show frame count
-        let frame_info = format!("Frame: {}/{}", frame_index + 1, frames.len());
-        execute!(
-            stdout(),
-            MoveTo(width - frame_info.len() as u16 - 2, height - 2),
-            // crossterm::style::Print("Press 'q' to quit"),
-            crossterm::style::Print(frame_info)
-        )?;
-
-        // Move to next frame
-        frame_index = (frame_index + 1) % frames.len();
-        thread::sleep(Duration::from_millis(50));
+                for i in 0..100 {
+                    if i % 10 != 0 {
+                        ctx.print(f64::from(i) + 1.0, 0.0, format!("{i}", i = i % 10));
+                    }
+                    if i % 2 == 0 && i % 10 != 0 {
+                        ctx.print(0.0, f64::from(i), format!("{i}", i = i % 10));
+                    }
+                }
+            })
     }
-
-
-
-    // while running {
-    //     if poll(Duration::from_millis(100))? {
-    //         match read()? {
-    //             Event::Key(key_event) => {
-    //                 if matches!(key_event.code, KeyCode::Char('q') | KeyCode::Char('Q')) {
-    //                     running = false;
-    //                 }
-    //             }
-    //             _ => {}
-    //         }
-    //     }        // Clear screen
-    //     execute!(stdout(), Clear(ClearType::All))?;
-    //     let _ = draw_to_terminal(&frames, frame_index, width, height);
-    // }
-
-    // Clean up terminal
-    execute!(stdout(), Show, LeaveAlternateScreen)?;
-
-    let _ = disable_raw_mode();
-    Ok(())
-}
-
-
-fn draw_to_terminal(frames: &Vec<String>, frame_index: usize, width: u16, height: u16) -> io::Result<()> {
-    let width = width as usize;
-    let height = height as usize;
-    let frame = &frames[frame_index];
-    let frame_lines: Vec<&str> = frame.lines().collect();
-    let max_line_width = frame_lines.iter().map(|line| line.len()).max().unwrap_or(0);
-    for (i, line) in frame_lines.iter().enumerate() {
-        let x = (width - max_line_width) / 2;
-        let y = (height - frame_lines.len()) / 2 + i;
-
-        if y < height {
-            execute!(
-                stdout(),
-                MoveTo(x as u16, y as u16),
-                crossterm::style::Print(line)
-            )?;
-        }
-    }
-
-    Ok(())
 }

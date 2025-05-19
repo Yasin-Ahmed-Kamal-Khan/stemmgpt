@@ -1,10 +1,18 @@
 [package]
-name = "stemmgpt"
+name = "your_terminal_app"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-clap = { version = "4.0", features = ["derive"] } # for command-line parsing
-crossterm = "0.27" # for terminal control and animations
-rand = "0.8" # for random elements
-include_dir = "0.7.3"
+# Core terminal UI
+ratatui = { version = "0.26", features = ["crossterm"] }
+crossterm = { version = "0.27", features = ["serde"] }
+
+# Error handling
+color-eyre = "0.6"
+
+# Utilities
+itertools = "0.12"
+
+# Optional but recommended for async
+tokio = { version = "1.0", features = ["full"] }
