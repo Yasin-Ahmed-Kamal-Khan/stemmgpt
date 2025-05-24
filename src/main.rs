@@ -8,15 +8,16 @@
 /// release.
 ///
 /// [`latest`]: https://github.com/ratatui/ratatui/tree/latest
+
+
 use std::{
-    io::stdout,
-    time::{Duration, Instant},
+    io::stdout, time::{Duration, Instant}
 };
 use std::io;
-use ratatui::{layout::Alignment, style::Style, widgets::{canvas::Context, Borders, Paragraph}, Frame};
+use ratatui::{layout::Alignment, style::Style, widgets::{Borders, Paragraph}, Frame};
 use color_eyre::Result;
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, MouseEventKind,
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseEventKind
 };
 use crossterm::ExecutableCommand;
 use itertools::Itertools;
@@ -24,12 +25,12 @@ use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Stylize};
 use ratatui::symbols::Marker;
 use ratatui::text::Text;
-use ratatui::widgets::canvas::{Canvas, Circle, Map, MapResolution, Points, Rectangle};
+use ratatui::widgets::canvas::{Canvas, Circle, Points, Rectangle};
 use ratatui::widgets::{Block, Widget};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use include_dir::{include_dir, Dir};
-
+use chrono::Utc;
 static FRAMES_DIR: Dir = include_dir!("src/frames/");
 
 fn get_frames() -> Vec<&'static str> {
@@ -43,6 +44,8 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(std::io::stdout());
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
+
+
     let app_result = App::new().run(terminal);
     crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
     crossterm::terminal::disable_raw_mode()?;
@@ -50,14 +53,16 @@ fn main() -> Result<()> {
     app_result
 }
 
+enum InputMode {
+    Normal,
+    Editing,
+}
+
 struct App {
     exit: bool,
-    x: f64,
-    y: f64,
     frames: Vec<&'static str>,
     current_frame: usize,
-    frame_counter: usize,
-    frame_delay: usize,
+    last_time: i64,
     ball: Circle,
     playground: Rect,
     vx: f64,
@@ -65,14 +70,22 @@ struct App {
     marker: Marker,
     points: Vec<Position>,
     is_drawing: bool,
+
+
+    /// Current value of the input box
+    input: String,
+    /// Position of cursor in the editor area.
+    character_index: usize,
+    /// Current input mode
+    input_mode: InputMode,
+    /// History of recorded messages
+    messages: Vec<String>,
 }
 
 impl App {
     fn new() -> Self {
         Self {
             exit: false,
-            x: 0.0,
-            y: 0.0,
             ball: Circle {
                 x: 20.0,
                 y: 40.0,
@@ -87,9 +100,12 @@ impl App {
             is_drawing: false,
             frames: get_frames(),
             current_frame: 0,
-            frame_counter: 0,
-            frame_delay: 0,
-        }
+            last_time: Utc::now().timestamp_millis(),
+
+            input: String::new(),
+            input_mode: InputMode::Normal,
+            messages: Vec::new(),
+            character_index: 0,        }
     }
 
     pub fn run(mut self, mut terminal: Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
@@ -104,24 +120,36 @@ impl App {
                 continue;
             }
             match event::read()? {
-                Event::Key(key) => self.handle_key_event(key),
                 Event::Mouse(event) => self.handle_mouse_event(event),
-                _ => (),
+                Event::Key(key) => {
+                    match self.input_mode {
+                        InputMode::Normal => match key.code {
+                            KeyCode::Char('e') => {
+                                println!("hello");
+                                self.input_mode = InputMode::Editing;
+                            }
+                            KeyCode::Char('q') => {
+                                return Ok(());
+                            }
+                            _ => {}
+                        },
+                        InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
+                            // KeyCode::Enter => self.submit_message(),
+                            KeyCode::Char(to_insert) => self.enter_char(to_insert),
+                            // KeyCode::Backspace => self.delete_char(),
+                            KeyCode::Left => self.move_cursor_left(),
+                            KeyCode::Right => self.move_cursor_right(),
+                            KeyCode::Esc => self.input_mode = InputMode::Normal,
+                            _ => {}
+                        },
+                        InputMode::Editing => {}
+                    }
+                }
+
+                _ => {}
             }
         }
         Ok(())
-    }
-
-    fn handle_key_event(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => self.exit = true,
-            KeyCode::Char('j') | KeyCode::Down => self.y += 1.0,
-            KeyCode::Char('k') | KeyCode::Up => self.y -= 1.0,
-            KeyCode::Char('l') | KeyCode::Right => self.x += 1.0,
-            KeyCode::Char('h') | KeyCode::Left => self.x -= 1.0,
-            KeyCode::Enter => self.cycle_marker(),
-            _ => {}
-        }
     }
 
     fn handle_mouse_event(&mut self, event: event::MouseEvent) {
@@ -133,16 +161,6 @@ impl App {
             }
             _ => {}
         }
-    }
-
-    const fn cycle_marker(&mut self) {
-        self.marker = match self.marker {
-            Marker::Dot => Marker::Braille,
-            Marker::Braille => Marker::Block,
-            Marker::Block => Marker::HalfBlock,
-            Marker::HalfBlock => Marker::Bar,
-            Marker::Bar => Marker::Dot,
-        };
     }
 
     fn on_tick(&mut self) {
@@ -195,7 +213,7 @@ impl App {
         let [draw, pong] = horizontal.areas(up);
         let [map, boxes] = horizontal.areas(down);
 
-        frame.render_widget(self.map_canvas(), map);
+        frame.render_widget(self.input_canvas(), map);
         frame.render_widget(self.draw_canvas(draw), draw);
         frame.render_widget(App::ascii_art_widget(self, pong.width.into()), pong);
         frame.render_widget(self.boxes_canvas(boxes), boxes);
@@ -204,7 +222,12 @@ impl App {
     fn ascii_art_widget(app: &mut App, box_width: usize) -> Paragraph {
         let current_frame = &app.frames[app.current_frame];
         let padded_frame = Self::pad_ascii_frame(current_frame, box_width);
-        app.current_frame = (app.current_frame + 1) % app.frames.len();
+
+        if Utc::now().timestamp_millis() - app.last_time > 500 {
+            app.current_frame = (app.current_frame + 1) % app.frames.len();
+            app.last_time = Utc::now().timestamp_millis();
+        }
+
         Paragraph::new(padded_frame)
             .block(
                 Block::default()
@@ -241,21 +264,6 @@ impl App {
             .join("\n")
     }
 
-    fn map_canvas(&self) -> impl Widget + '_ {
-        Canvas::default()
-            .block(Block::bordered().title("World"))
-            .marker(self.marker)
-            .paint(|ctx| {
-                ctx.draw(&Map {
-                    color: Color::Green,
-                    resolution: MapResolution::High,
-                });
-                ctx.print(self.x, -self.y, "You are here".yellow());
-            })
-            .x_bounds([-180.0, 180.0])
-            .y_bounds([-90.0, 90.0])
-    }
-
     fn draw_canvas(&self, area: Rect) -> impl Widget + '_ {
         Canvas::default()
             .block(Block::bordered().title("Draw here"))
@@ -278,25 +286,6 @@ impl App {
                     color: Color::White,
                 });
             })
-    }
-
-    fn blank_canvas(&self) -> impl Widget {
-        let canvas: Canvas<fn(&mut Context)> = Canvas::default()
-            .x_bounds([0.0, 100.0])  // Define X-axis bounds
-            .y_bounds([0.0, 100.0]);  // Define Y-axis bounds
-            // No .paint() call means nothing will be drawn
-        canvas
-    }
-
-    fn pong_canvas(&self) -> impl Widget + '_ {
-        Canvas::default()
-            .block(Block::bordered().title("Pong"))
-            .marker(self.marker)
-            .paint(|ctx| {
-                ctx.draw(&self.ball);
-            })
-            .x_bounds([10.0, 210.0])
-            .y_bounds([10.0, 110.0])
     }
 
     fn boxes_canvas(&self, area: Rect) -> impl Widget {
@@ -336,4 +325,42 @@ impl App {
                 }
             })
     }
+
+    fn input_canvas(&mut self) -> impl Widget + '_{
+        Paragraph::new(self.input.as_str())
+            .style(match self.input_mode {
+                InputMode::Normal => Style::default(),
+                InputMode::Editing => Style::default().fg(Color::Yellow),
+            })
+            .block(Block::bordered().title("Input"))
+    }
+
+    fn move_cursor_left(&mut self) {
+        let cursor_moved_left = self.character_index.saturating_sub(1);
+        self.character_index = self.clamp_cursor(cursor_moved_left);
+    }
+
+    fn move_cursor_right(&mut self) {
+        let cursor_moved_right = self.character_index.saturating_add(1);
+        self.character_index = self.clamp_cursor(cursor_moved_right);
+    }
+
+    fn enter_char(&mut self, new_char: char) {
+        let index = self.byte_index();
+        self.input.insert(index, new_char);
+        self.move_cursor_right();
+    }
+
+        fn byte_index(&self) -> usize {
+        self.input
+            .char_indices()
+            .map(|(i, _)| i)
+            .nth(self.character_index)
+            .unwrap_or(self.input.len())
+    }
+
+    fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
+        new_cursor_pos.clamp(0, self.input.chars().count())
+    }
+
 }

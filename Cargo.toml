@@ -16,3 +16,5 @@ itertools = "0.12"
 
 # Optional but recommended for async
 tokio = { version = "1.0", features = ["full"] }
+
+chrono = "0.4"
