@@ -166,18 +166,18 @@ impl App {
         let [input_box, ascii_art_box] = horizontal.areas(up);
         let [_, boxes] = horizontal.areas(down);
 
-        frame.render_widget(App::ascii_art_widget(self, ascii_art_box.width.into()), ascii_art_box);
+        frame.render_widget(self.ascii_art_widget(ascii_art_box.width.into()), ascii_art_box);
         frame.render_widget(self.input_canvas(), input_box);
-        frame.render_widget(self.boxes_canvas(boxes), boxes);
+        frame.render_widget(self.input_canvas(), boxes);
     }
 
-    fn ascii_art_widget(app: &mut App, box_width: usize) -> Paragraph {
-        let current_frame = &app.frames[app.current_frame];
+    fn ascii_art_widget(&mut self, box_width: usize) -> Paragraph {
+        let current_frame = &self.frames[self.current_frame];
         let padded_frame = Self::pad_ascii_frame(current_frame, box_width);
 
-        if Utc::now().timestamp_millis() - app.last_time > 500 {
-            app.current_frame = (app.current_frame + 1) % app.frames.len();
-            app.last_time = Utc::now().timestamp_millis();
+        if Utc::now().timestamp_millis() - self.last_time > 500 {
+            self.current_frame = (self.current_frame + 1) % self.frames.len();
+            self.last_time = Utc::now().timestamp_millis();
         }
 
         Paragraph::new(padded_frame)
@@ -214,44 +214,6 @@ impl App {
             })
             .collect::<Vec<_>>()
             .join("\n")
-    }
-
-    fn boxes_canvas(&self, area: Rect) -> impl Widget {
-        let left = 0.0;
-        let right = f64::from(area.width);
-        let bottom = 0.0;
-        let top = f64::from(area.height).mul_add(2.0, -4.0);
-        Canvas::default()
-            .block(Block::bordered().title("Rects"))
-            .marker(self.marker)
-            .x_bounds([left, right])
-            .y_bounds([bottom, top])
-            .paint(|ctx| {
-                for i in 0..=11 {
-                    ctx.draw(&Rectangle {
-                        x: f64::from(i * i + 3 * i) / 2.0 + 2.0,
-                        y: 2.0,
-                        width: f64::from(i),
-                        height: f64::from(i),
-                        color: Color::Red,
-                    });
-                    ctx.draw(&Rectangle {
-                        x: f64::from(i * i + 3 * i) / 2.0 + 2.0,
-                        y: 21.0,
-                        width: f64::from(i),
-                        height: f64::from(i),
-                        color: Color::Blue,
-                    });
-                }
-                for i in 0..100 {
-                    if i % 10 != 0 {
-                        ctx.print(f64::from(i) + 1.0, 0.0, format!("{i}", i = i % 10));
-                    }
-                    if i % 2 == 0 && i % 10 != 0 {
-                        ctx.print(0.0, f64::from(i), format!("{i}", i = i % 10));
-                    }
-                }
-            })
     }
 
     fn input_canvas(&mut self) -> impl Widget + '_{
