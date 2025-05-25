@@ -65,8 +65,6 @@ struct App {
     frames: Vec<&'static str>,
     current_frame: usize,
     last_time: i64,
-    marker: Marker,
-
     /// Current value of the input box
     input: String,
     /// Position of cursor in the editor area.
@@ -81,13 +79,12 @@ impl App {
     fn new() -> Self {
         Self {
             exit: false,
-            marker: Marker::Dot,
             frames: get_frames(),
             current_frame: 0,
             last_time: Utc::now().timestamp_millis(),
 
             input: String::new(),
-            input_mode: InputMode::Normal,
+            input_mode: InputMode::Editing,
             messages: Vec::new(),
             character_index: 0,
           }
@@ -119,7 +116,7 @@ impl App {
                         InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
                             // KeyCode::Enter => self.submit_message(),
                             KeyCode::Char(to_insert) => self.enter_char(to_insert),
-                            // KeyCode::Backspace => self.delete_char(),
+                            KeyCode::Backspace => self.delete_char(),
                             KeyCode::Left => self.move_cursor_left(),
                             KeyCode::Right => self.move_cursor_right(),
                             KeyCode::Esc => self.input_mode = InputMode::Normal,
@@ -260,4 +257,25 @@ impl App {
         new_cursor_pos.clamp(0, self.input.chars().count())
     }
 
+    fn delete_char(&mut self) {
+        let is_not_cursor_leftmost = self.character_index != 0;
+        if is_not_cursor_leftmost {
+            // Method "remove" is not used on the saved text for deleting the selected char.
+            // Reason: Using remove on String works on bytes instead of the chars.
+            // Using remove would require special care because of char boundaries.
+
+            let current_index = self.character_index;
+            let from_left_to_current_index = current_index - 1;
+
+            // Getting all characters before the selected character.
+            let before_char_to_delete = self.input.chars().take(from_left_to_current_index);
+            // Getting all characters after selected character.
+            let after_char_to_delete = self.input.chars().skip(current_index);
+
+            // Put all characters together except the selected one.
+            // By leaving the selected one out, it is forgotten and therefore deleted.
+            self.input = before_char_to_delete.chain(after_char_to_delete).collect();
+            self.move_cursor_left();
+        }
+    }
 }
