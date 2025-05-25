@@ -11,21 +11,19 @@
 
 
 use std::{
-    io::stdout, time::{Duration, Instant}
+    time::{Duration, Instant}
 };
 use std::io;
-use ratatui::{layout::Alignment, style::Style, widgets::{Borders, Paragraph}, Frame};
+use ratatui::{layout::Alignment, style::Style, widgets::{Borders, Paragraph, Wrap}, Frame};
 use color_eyre::Result;
 use crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseEventKind
+    self, Event, KeyCode, KeyEventKind,
 };
-use crossterm::ExecutableCommand;
-use itertools::Itertools;
-use ratatui::layout::{Constraint, Layout, Position, Rect};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Stylize};
 use ratatui::symbols::Marker;
 use ratatui::text::Text;
-use ratatui::widgets::canvas::{Canvas, Circle, Points, Rectangle};
+use ratatui::widgets::canvas::{Canvas, Rectangle};
 use ratatui::widgets::{Block, Widget};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -40,19 +38,23 @@ fn get_frames() -> Vec<&'static str> {
 }
 fn main() -> Result<()> {
     color_eyre::install()?;
-    stdout().execute(EnableMouseCapture)?;
+
+    // Enable raw mode for terminal
+    crossterm::terminal::enable_raw_mode()?;
+    crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
+
     let backend = CrosstermBackend::new(std::io::stdout());
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-
     let app_result = App::new().run(terminal);
+
+    // Clean shutdown
     crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
     crossterm::terminal::disable_raw_mode()?;
-    stdout().execute(DisableMouseCapture)?;
+
     app_result
 }
-
 enum InputMode {
     Normal,
     Editing,
@@ -63,14 +65,7 @@ struct App {
     frames: Vec<&'static str>,
     current_frame: usize,
     last_time: i64,
-    ball: Circle,
-    playground: Rect,
-    vx: f64,
-    vy: f64,
     marker: Marker,
-    points: Vec<Position>,
-    is_drawing: bool,
-
 
     /// Current value of the input box
     input: String,
@@ -86,18 +81,7 @@ impl App {
     fn new() -> Self {
         Self {
             exit: false,
-            ball: Circle {
-                x: 20.0,
-                y: 40.0,
-                radius: 10.0,
-                color: Color::Yellow,
-            },
-            playground: Rect::new(10, 10, 200, 100),
-            vx: 1.0,
-            vy: 1.0,
             marker: Marker::Dot,
-            points: vec![],
-            is_drawing: false,
             frames: get_frames(),
             current_frame: 0,
             last_time: Utc::now().timestamp_millis(),
@@ -105,7 +89,8 @@ impl App {
             input: String::new(),
             input_mode: InputMode::Normal,
             messages: Vec::new(),
-            character_index: 0,        }
+            character_index: 0,
+          }
     }
 
     pub fn run(mut self, mut terminal: Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
@@ -115,17 +100,15 @@ impl App {
             terminal.draw(|frame| self.render(frame))?;
             let timeout = tick_rate.saturating_sub(last_tick.elapsed());
             if !event::poll(timeout)? {
-                self.on_tick();
                 last_tick = Instant::now();
                 continue;
             }
             match event::read()? {
-                Event::Mouse(event) => self.handle_mouse_event(event),
+                Event::Mouse(_) => {},
                 Event::Key(key) => {
                     match self.input_mode {
                         InputMode::Normal => match key.code {
                             KeyCode::Char('e') => {
-                                println!("hello");
                                 self.input_mode = InputMode::Editing;
                             }
                             KeyCode::Char('q') => {
@@ -152,35 +135,6 @@ impl App {
         Ok(())
     }
 
-    fn handle_mouse_event(&mut self, event: event::MouseEvent) {
-        match event.kind {
-            MouseEventKind::Down(_) => self.is_drawing = true,
-            MouseEventKind::Up(_) => self.is_drawing = false,
-            MouseEventKind::Drag(_) => {
-                self.points.push(Position::new(event.column, event.row));
-            }
-            _ => {}
-        }
-    }
-
-    fn on_tick(&mut self) {
-        // bounce the ball by flipping the velocity vector
-        let ball = &self.ball;
-        let playground = self.playground;
-        if ball.x - ball.radius < f64::from(playground.left())
-            || ball.x + ball.radius > f64::from(playground.right())
-        {
-            self.vx = -self.vx;
-        }
-        if ball.y - ball.radius < f64::from(playground.top())
-            || ball.y + ball.radius > f64::from(playground.bottom())
-        {
-            self.vy = -self.vy;
-        }
-        self.ball.x += self.vx;
-        self.ball.y += self.vy;
-    }
-
     fn render(&mut self, frame: &mut Frame) {
         let header = Text::from_iter([
             "Canvas Example".bold(),
@@ -205,17 +159,15 @@ impl App {
         ]).split(main_layout[1]);
 
         // Destructure the chunks
-        let [text_area, up, down] = [vertical[0], vertical[1], vertical[2]];
-        frame.render_widget(header.centered(), text_area);
+        let [_, up, down] = [vertical[0], vertical[1], vertical[2]];
 
         let horizontal =
             Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]);
-        let [draw, pong] = horizontal.areas(up);
-        let [map, boxes] = horizontal.areas(down);
+        let [input_box, ascii_art_box] = horizontal.areas(up);
+        let [_, boxes] = horizontal.areas(down);
 
-        frame.render_widget(self.input_canvas(), map);
-        frame.render_widget(self.draw_canvas(draw), draw);
-        frame.render_widget(App::ascii_art_widget(self, pong.width.into()), pong);
+        frame.render_widget(App::ascii_art_widget(self, ascii_art_box.width.into()), ascii_art_box);
+        frame.render_widget(self.input_canvas(), input_box);
         frame.render_widget(self.boxes_canvas(boxes), boxes);
     }
 
@@ -264,30 +216,6 @@ impl App {
             .join("\n")
     }
 
-    fn draw_canvas(&self, area: Rect) -> impl Widget + '_ {
-        Canvas::default()
-            .block(Block::bordered().title("Draw here"))
-            .marker(self.marker)
-            .x_bounds([0.0, f64::from(area.width)])
-            .y_bounds([0.0, f64::from(area.height)])
-            .paint(move |ctx| {
-                let points = self
-                    .points
-                    .iter()
-                    .map(|p| {
-                        (
-                            f64::from(p.x) - f64::from(area.left()),
-                            f64::from(area.bottom()) - f64::from(p.y),
-                        )
-                    })
-                    .collect_vec();
-                ctx.draw(&Points {
-                    coords: &points,
-                    color: Color::White,
-                });
-            })
-    }
-
     fn boxes_canvas(&self, area: Rect) -> impl Widget {
         let left = 0.0;
         let right = f64::from(area.width);
@@ -327,12 +255,19 @@ impl App {
     }
 
     fn input_canvas(&mut self) -> impl Widget + '_{
-        Paragraph::new(self.input.as_str())
+        // Create a styled block with title
+        let block = Block::bordered()
+            .title(" Input ")
+            .title_alignment(Alignment::Left)
             .style(match self.input_mode {
                 InputMode::Normal => Style::default(),
                 InputMode::Editing => Style::default().fg(Color::Yellow),
-            })
-            .block(Block::bordered().title("Input"))
+            });
+
+        // Create the paragraph with proper cursor handling
+        Paragraph::new(self.input.as_str())
+            .block(block)
+            .wrap(Wrap { trim: false })
     }
 
     fn move_cursor_left(&mut self) {
@@ -351,7 +286,7 @@ impl App {
         self.move_cursor_right();
     }
 
-        fn byte_index(&self) -> usize {
+    fn byte_index(&self) -> usize {
         self.input
             .char_indices()
             .map(|(i, _)| i)
