@@ -3,7 +3,7 @@ use std::{
 };
 use std::io;
 use ratatui::{layout::Alignment, style::Style, widgets::{Borders, Paragraph, Wrap}, Frame};
-use color_eyre::Result;
+use color_eyre::{owo_colors::colors::Red, Result};
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind,
 };
@@ -82,7 +82,7 @@ impl App {
                             _ => {}
                         },
                         InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
-                            // KeyCode::Enter => self.submit_message(),
+                            KeyCode::Enter => self.submit_message(),
                             KeyCode::Char(to_insert) => self.enter_char(to_insert),
                             KeyCode::Backspace => self.delete_char(),
                             KeyCode::Left => self.move_cursor_left(),
@@ -133,7 +133,7 @@ impl App {
 
         frame.render_widget(self.ascii_art_widget(ascii_art_box.width.into()), ascii_art_box);
         frame.render_widget(self.input_canvas(), input_box);
-        frame.render_widget(self.input_canvas(), boxes);
+        frame.render_widget(self.output_canvas(), boxes);
     }
 
     fn ascii_art_widget(&mut self, box_width: usize) -> Paragraph {
@@ -181,8 +181,19 @@ impl App {
             .join("\n")
     }
 
-    fn input_canvas(&mut self) -> impl Widget + '_{
-        // Create a styled block with title
+    fn output_canvas(&mut self) -> impl Widget + '_ {
+                let block = Block::bordered()
+            .title(" Output ")
+            .title_alignment(Alignment::Left)
+            .style(Style::default().fg(Color::Red).bg(Color::Green));
+
+        Paragraph::new(self.input.as_str())
+            .block(block)
+            .wrap(Wrap { trim: false })
+
+    }
+
+    fn input_canvas(&mut self) -> impl Widget + '_ {
         let block = Block::bordered()
             .title(" Input ")
             .title_alignment(Alignment::Left)
@@ -191,8 +202,14 @@ impl App {
                 InputMode::Editing => Style::default().fg(Color::Yellow),
             });
 
-        // Create the paragraph with proper cursor handling
-        Paragraph::new(self.input.as_str())
+        Paragraph::new(match self.messages.last() {
+            Some(text) => text,
+            None => "",
+        }
+
+
+
+     )
             .block(block)
             .wrap(Wrap { trim: false })
     }
@@ -245,5 +262,15 @@ impl App {
             self.input = before_char_to_delete.chain(after_char_to_delete).collect();
             self.move_cursor_left();
         }
+    }
+
+    fn submit_message(&mut self) {
+        self.messages.push(self.input.clone());
+        self.input.clear();
+        self.reset_cursor();
+    }
+
+    const fn reset_cursor(&mut self) {
+        self.character_index = 0;
     }
 }

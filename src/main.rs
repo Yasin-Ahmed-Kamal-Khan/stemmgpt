@@ -7,7 +7,6 @@ use ratatui::{prelude::CrosstermBackend, Terminal};
 fn main() -> Result<(), Report> {
     color_eyre::install()?;
 
-    // Enable raw mode for terminal
     crossterm::terminal::enable_raw_mode()?;
     crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)?;
 
@@ -15,11 +14,10 @@ fn main() -> Result<(), Report> {
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let app_result = App::new().run(terminal);
+    let result = App::new().run(terminal);
 
-    // Clean shutdown
-    crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen)?;
-    crossterm::terminal::disable_raw_mode()?;
+    let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
+    let _ = crossterm::terminal::disable_raw_mode();
 
-    app_result
+    result
 }
