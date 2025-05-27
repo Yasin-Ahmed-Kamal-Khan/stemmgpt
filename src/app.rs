@@ -134,9 +134,7 @@ impl App {
         let [input_box, ascii_art_box] = horizontal.areas(up);
         let [_, boxes] = horizontal.areas(down);
 
-        let help_message = Paragraph::new(header);
-
-        frame.render_widget(help_message, heading);
+        frame.render_widget(self.header(), heading);
         frame.render_widget(self.ascii_art_widget(ascii_art_box.width.into()), ascii_art_box);
         frame.render_widget(self.input_canvas(), input_box);
         frame.render_widget(self.output_canvas(), boxes);
@@ -262,5 +260,13 @@ impl App {
 
     const fn reset_cursor(&mut self) {
         self.character_index = 0;
+    }
+
+    fn header(&mut self) -> Paragraph<'_> {
+        let header = Text::from_iter([
+            "STEMMGPT".bold(),
+            "<q> Quit | <enter> Change Marker | <hjkl> Move".into(),
+        ]);
+        Paragraph::new(header)
     }
 }
