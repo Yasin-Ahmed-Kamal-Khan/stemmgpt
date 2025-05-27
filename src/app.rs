@@ -17,6 +17,8 @@ use include_dir::{include_dir, Dir};
 use chrono::Utc;
 static FRAMES_DIR: Dir = include_dir!("src/frames/");
 
+use crate::typewriter::{self, Typewriter};
+
 fn get_frames() -> Vec<&'static str> {
     FRAMES_DIR.files()
         .filter_map(|f| f.contents_utf8())
@@ -40,7 +42,7 @@ pub struct App {
     /// Current input mode
     input_mode: InputMode,
     /// History of recorded messages
-    messages: Vec<String>,
+    typewriter: Typewriter,
 }
 
 impl App {
@@ -53,8 +55,8 @@ impl App {
 
             input: String::new(),
             input_mode: InputMode::Editing,
-            messages: Vec::new(),
             character_index: 0,
+            typewriter: Typewriter::new(),
           }
     }
 
@@ -62,6 +64,7 @@ impl App {
         let tick_rate = Duration::from_millis(16);
         let mut last_tick = Instant::now();
         while !self.exit {
+            self.typewriter.update_typewriter();
             terminal.draw(|frame| self.render(frame))?;
             let timeout = tick_rate.saturating_sub(last_tick.elapsed());
             if !event::poll(timeout)? {
@@ -102,7 +105,7 @@ impl App {
 
     fn render(&mut self, frame: &mut Frame) {
         let header = Text::from_iter([
-            "Canvas Example".bold(),
+            "STEMMGPT".bold(),
             "<q> Quit | <enter> Change Marker | <hjkl> Move".into(),
         ]);
 
@@ -124,13 +127,16 @@ impl App {
         ]).split(main_layout[1]);
 
         // Destructure the chunks
-        let [_, up, down] = [vertical[0], vertical[1], vertical[2]];
+        let [heading, up, down] = [vertical[0], vertical[1], vertical[2]];
 
         let horizontal =
             Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]);
         let [input_box, ascii_art_box] = horizontal.areas(up);
         let [_, boxes] = horizontal.areas(down);
 
+        let help_message = Paragraph::new(header);
+
+        frame.render_widget(help_message, heading);
         frame.render_widget(self.ascii_art_widget(ascii_art_box.width.into()), ascii_art_box);
         frame.render_widget(self.input_canvas(), input_box);
         frame.render_widget(self.output_canvas(), boxes);
@@ -182,15 +188,7 @@ impl App {
     }
 
     fn output_canvas(&mut self) -> impl Widget + '_ {
-                let block = Block::bordered()
-            .title(" Output ")
-            .title_alignment(Alignment::Left)
-            .style(Style::default().fg(Color::Red).bg(Color::Green));
-
-        Paragraph::new(self.input.as_str())
-            .block(block)
-            .wrap(Wrap { trim: false })
-
+        self.typewriter.output_canvas()
     }
 
     fn input_canvas(&mut self) -> impl Widget + '_ {
@@ -201,15 +199,7 @@ impl App {
                 InputMode::Normal => Style::default(),
                 InputMode::Editing => Style::default().fg(Color::Yellow),
             });
-
-        Paragraph::new(match self.messages.last() {
-            Some(text) => text,
-            None => "",
-        }
-
-
-
-     )
+        Paragraph::new(self.input.as_str())
             .block(block)
             .wrap(Wrap { trim: false })
     }
@@ -265,7 +255,7 @@ impl App {
     }
 
     fn submit_message(&mut self) {
-        self.messages.push(self.input.clone());
+        self.typewriter.add_message(self.input.clone());
         self.input.clear();
         self.reset_cursor();
     }
