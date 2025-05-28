@@ -1,12 +1,11 @@
 use chrono::Utc;
 use ratatui::{layout::Alignment, style::{Color, Style}, widgets::{Block, Paragraph, Widget, Wrap}};
 
-// Add these fields to your App struct
 pub struct Typewriter {
-    current_message_index: usize, 
-    visible_chars: usize,         
-    last_char_time: i64,          
-    char_delay_ms: i64,           
+    current_message_index: usize,
+    visible_chars: usize,
+    last_char_time: i64,
+    char_delay_ms: i64,
     messages: Vec<String>,
 }
 
@@ -42,7 +41,6 @@ impl Typewriter {
         }
     }
 
-    // Method to start typing a new message (call when adding new message)
     fn start_new_message(&mut self) {
         if !self.messages.is_empty() {
             self.current_message_index = self.messages.len() - 1;
@@ -73,6 +71,6 @@ impl Typewriter {
     // Modified method for adding messages
     pub fn add_message(&mut self, message: String) {
         self.messages.push(message);
-        self.start_new_message(); // Start typing the new message
+        self.start_new_message();
     }
 }

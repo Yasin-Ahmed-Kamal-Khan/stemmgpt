@@ -1,5 +1,6 @@
 mod app;
 mod typewriter;
+mod animation;
 use app::App;
 
 use color_eyre::eyre::Report;

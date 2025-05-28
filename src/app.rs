@@ -1,5 +1,5 @@
 use std::{
-    time::{Duration, Instant}
+    sync::LazyLock, time::{Duration, Instant}
 };
 use std::io;
 use ratatui::{layout::Alignment, style::Style, widgets::{Borders, Paragraph, Wrap}, Frame};
@@ -13,17 +13,20 @@ use ratatui::text::Text;
 use ratatui::widgets::{Block, Widget};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use include_dir::{include_dir, Dir};
 use chrono::Utc;
-static FRAMES_DIR: Dir = include_dir!("src/frames/");
 
-use crate::typewriter::{self, Typewriter};
+use crate::{animation::Animation, typewriter::Typewriter};
 
-fn get_frames() -> Vec<&'static str> {
-    FRAMES_DIR.files()
-        .filter_map(|f| f.contents_utf8())
-        .collect()
-}
+static HEADER_TEXT: LazyLock<Text<'static>> = LazyLock::new(|| {
+    Text::from_iter([
+        "".fg(Color::Cyan),
+        "         🤖 STEM GPT 🧬      ".fg(Color::Green).bold(),
+        "     AI Assistant for STEM   ".fg(Color::Blue),
+        "".fg(Color::Cyan),
+        "".into(),
+        "Press 'e' to edit | 'q' to quit".fg(Color::Yellow).italic(),
+    ])
+});
 
 enum InputMode {
     Normal,
@@ -32,9 +35,6 @@ enum InputMode {
 
 pub struct App {
     exit: bool,
-    frames: Vec<&'static str>,
-    current_frame: usize,
-    last_time: i64,
     /// Current value of the input box
     input: String,
     /// Position of cursor in the editor area.
@@ -43,20 +43,18 @@ pub struct App {
     input_mode: InputMode,
     /// History of recorded messages
     typewriter: Typewriter,
+    animation: Animation,
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
             exit: false,
-            frames: get_frames(),
-            current_frame: 0,
-            last_time: Utc::now().timestamp_millis(),
-
             input: String::new(),
             input_mode: InputMode::Editing,
             character_index: 0,
             typewriter: Typewriter::new(),
+            animation: Animation::new(),
           }
     }
 
@@ -104,12 +102,6 @@ impl App {
     }
 
     fn render(&mut self, frame: &mut Frame) {
-        let header = Text::from_iter([
-            "STEMMGPT".bold(),
-            "<q> Quit | <enter> Change Marker | <hjkl> Move".into(),
-        ]);
-
-
         let base_area = frame.size();
 
         // 2. Create your main layout divisions
@@ -121,7 +113,7 @@ impl App {
 
 
         let vertical = Layout::vertical([
-            Constraint::Length(header.height() as u16),
+            Constraint::Length(HEADER_TEXT.height() as u16),
             Constraint::Percentage(50),
             Constraint::Percentage(50),
         ]).split(main_layout[1]);
@@ -135,54 +127,9 @@ impl App {
         let [_, boxes] = horizontal.areas(down);
 
         frame.render_widget(self.header(), heading);
-        frame.render_widget(self.ascii_art_widget(ascii_art_box.width.into()), ascii_art_box);
+        frame.render_widget(self.animation.ascii_art_widget(ascii_art_box.width.into()), ascii_art_box);
         frame.render_widget(self.input_canvas(), input_box);
         frame.render_widget(self.output_canvas(), boxes);
-    }
-
-    fn ascii_art_widget(&mut self, box_width: usize) -> Paragraph {
-        let current_frame = &self.frames[self.current_frame];
-        let padded_frame = Self::pad_ascii_frame(current_frame, box_width);
-
-        if Utc::now().timestamp_millis() - self.last_time > 500 {
-            self.current_frame = (self.current_frame + 1) % self.frames.len();
-            self.last_time = Utc::now().timestamp_millis();
-        }
-
-        Paragraph::new(padded_frame)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("ASCII Art")
-            )
-            .alignment(Alignment::Left)
-
-    }
-
-    fn pad_ascii_frame(frame: &str, target_width: usize) -> String {
-        // Find the longest line in the ASCII frame
-        let frame_width = frame.lines()
-            .map(|line| line.len())
-            .max()
-            .unwrap_or(0);
-
-        // Calculate equal left/right padding
-        let total_padding = target_width.saturating_sub(frame_width);
-        let left_pad = total_padding / 2;
-        let right_pad = total_padding - left_pad;
-
-        // Apply padding to each line
-        frame.lines()
-            .map(|line| {
-                format!(
-                    "{}{}{}",
-                    " ".repeat(left_pad),
-                    line,
-                    " ".repeat(right_pad)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
     }
 
     fn output_canvas(&mut self) -> impl Widget + '_ {
@@ -263,10 +210,16 @@ impl App {
     }
 
     fn header(&mut self) -> Paragraph<'_> {
-        let header = Text::from_iter([
-            "STEMMGPT".bold(),
-            "<q> Quit | <enter> Change Marker | <hjkl> Move".into(),
-        ]);
+        let header = HEADER_TEXT.clone();
+
         Paragraph::new(header)
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Magenta))
+                    .title(" Welcome ")
+                    .title_alignment(Alignment::Center)
+            )
     }
 }
