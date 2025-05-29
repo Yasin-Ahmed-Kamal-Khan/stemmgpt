@@ -87,6 +87,7 @@ impl App {
                             _ => {}
                         },
                         InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
+                            KeyCode::PageUp => self.animation.set_state(State::DYING),
                             KeyCode::Enter => self.submit_message(),
                             KeyCode::Char(to_insert) => self.enter_char(to_insert),
                             KeyCode::Backspace => self.delete_char(),
