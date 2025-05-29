@@ -15,7 +15,7 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use chrono::Utc;
 
-use crate::{animation::Animation, typewriter::Typewriter};
+use crate::{animation::{Animation, State}, typewriter::Typewriter};
 
 static HEADER_TEXT: LazyLock<Text<'static>> = LazyLock::new(|| {
     Text::from_iter([
@@ -62,7 +62,11 @@ impl App {
         let tick_rate = Duration::from_millis(16);
         let mut last_tick = Instant::now();
         while !self.exit {
-            self.typewriter.update_typewriter();
+            match self.typewriter.update_typewriter()  {
+                Some(state) => self.animation.set_state(state),
+                None => {},
+            };
+
             terminal.draw(|frame| self.render(frame))?;
             let timeout = tick_rate.saturating_sub(last_tick.elapsed());
             if !event::poll(timeout)? {

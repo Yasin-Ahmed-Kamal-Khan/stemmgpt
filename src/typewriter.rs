@@ -1,6 +1,8 @@
 use chrono::Utc;
 use ratatui::{layout::Alignment, style::{Color, Style}, widgets::{Block, Paragraph, Widget, Wrap}};
 
+use crate::animation::State;
+
 pub struct Typewriter {
     current_message_index: usize,
     visible_chars: usize,
@@ -22,9 +24,9 @@ impl Typewriter {
     }
 
     // Call this method in your main loop to update the typewriter effect
-    pub fn update_typewriter(&mut self) {
+    pub fn update_typewriter(&mut self) -> Option<State> {
         if self.messages.is_empty() {
-            return;
+            return Some(State::IDLE)
         }
 
         let current_time = Utc::now().timestamp_millis();
@@ -37,8 +39,13 @@ impl Typewriter {
                 // Show next character
                 self.visible_chars += 1;
                 self.last_char_time = current_time;
+                return Some(State::TALKING)
+            } else {
+                return Some(State::IDLE)
             }
         }
+
+        None
     }
 
     fn start_new_message(&mut self) {

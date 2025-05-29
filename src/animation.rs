@@ -1,6 +1,7 @@
+use rand::Rng;
 use chrono::Utc;
 use include_dir::{include_dir, Dir};
-use ratatui::{layout::Alignment, widgets::{Block, Borders, Paragraph}};
+use ratatui::{layout::Alignment, style::{palette::material::RED, Color, Stylize}, text::Line, widgets::{Block, Borders, Paragraph}};
 
 static TALKING_FRAMES_DIR: Dir = include_dir!("src/frames/talking");
 
@@ -10,11 +11,18 @@ fn get_frames() -> Vec<&'static str> {
         .collect()
 }
 
+pub enum State {
+    TALKING,
+    IDLE,
+}
+
+
 pub struct Animation {
     talking_frames: Vec<&'static str>,
     frames: Vec<&'static str>,
     current_frame: usize,
     last_time: i64,
+    state: State,
 }
 
 impl Animation {
@@ -24,25 +32,33 @@ impl Animation {
             frames: get_frames(),
             current_frame: 0,
             last_time: Utc::now().timestamp_millis(),
+            state: State::IDLE,
         }
     }
 
     pub fn ascii_art_widget(&mut self, box_width: usize) -> Paragraph {
-        let current_frame = &self.frames[self.current_frame];
-        let padded_frame = Self::pad_ascii_frame(current_frame, box_width);
+        let padded_frame = match self.state {
+            State::TALKING => {
+                if Utc::now().timestamp_millis() - self.last_time > 1000 {
+                    self.current_frame = (self.current_frame + 1) % self.frames.len();
+                    self.last_time = Utc::now().timestamp_millis();
+                }
 
-        if Utc::now().timestamp_millis() - self.last_time > 200 {
-            self.current_frame = (self.current_frame + 1) % self.frames.len();
-            self.last_time = Utc::now().timestamp_millis();
-        }
+                let current_frame = &self.frames[self.current_frame];
+                Line::from(Self::pad_ascii_frame(current_frame, box_width))
+            },
+            State::IDLE => {
+                Animation::horizontal_line(box_width, &"_".to_string(), Color::Red)
+            },
+        };
 
         Paragraph::new(padded_frame)
             .block(
-            Block::default()
-            .borders(Borders::ALL)
-            .title("ASCII Art")
-        )
-        .alignment(Alignment::Left)
+                Block::default()
+                .borders(Borders::ALL)
+                .title("ASCII Art")
+            )
+            .alignment(Alignment::Left)
 
     }
 
@@ -70,5 +86,22 @@ impl Animation {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    fn random_zigzag_line(width: usize) -> String {
+        let mut rng = rand::thread_rng();
+        let chars = ['/', '\\', '_', '^', 'v', '~'];
+
+        (0..width)
+            .map(|_| chars[rng.gen_range(0..chars.len())])
+            .collect()
+    }
+
+    fn horizontal_line(width: usize, char: &str, color: Color) -> Line<'static> {
+        char.repeat(width).fg(color).into()
+    }
+
+    pub fn set_state(&mut self, state: State) {
+        self.state = state;
     }
 }
