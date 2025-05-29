@@ -1,7 +1,7 @@
 use rand::Rng;
 use chrono::Utc;
 use include_dir::{include_dir, Dir};
-use ratatui::{layout::Alignment, style::{palette::material::RED, Color, Stylize}, text::Line, widgets::{Block, Borders, Paragraph}};
+use ratatui::{layout::Alignment, style::{palette::material::RED, Color, Stylize}, text::{Line, Text}, widgets::{Block, Borders, Paragraph}};
 
 static TALKING_FRAMES_DIR: Dir = include_dir!("src/frames/talking");
 
@@ -14,6 +14,7 @@ fn get_frames() -> Vec<&'static str> {
 pub enum State {
     TALKING,
     IDLE,
+    DYING,
 }
 
 
@@ -39,17 +40,18 @@ impl Animation {
     pub fn ascii_art_widget(&mut self, box_width: usize) -> Paragraph {
         let padded_frame = match self.state {
             State::TALKING => {
-                if Utc::now().timestamp_millis() - self.last_time > 1000 {
-                    self.current_frame = (self.current_frame + 1) % self.frames.len();
-                    self.last_time = Utc::now().timestamp_millis();
-                }
+                        if Utc::now().timestamp_millis() - self.last_time > 200 {
+                            self.current_frame = (self.current_frame + 1) % self.frames.len();
+                            self.last_time = Utc::now().timestamp_millis();
+                        }
 
-                let current_frame = &self.frames[self.current_frame];
-                Line::from(Self::pad_ascii_frame(current_frame, box_width))
-            },
+                        let current_frame = &self.frames[self.current_frame];
+                        Text::from(Self::pad_ascii_frame(current_frame, box_width))
+                    },
             State::IDLE => {
-                Animation::horizontal_line(box_width, &"_".to_string(), Color::Red)
-            },
+                        Animation::horizontal_line(box_width, &"_".to_string(), Color::Red)
+                    },
+            State::DYING => todo!(),
         };
 
         Paragraph::new(padded_frame)
@@ -97,7 +99,7 @@ impl Animation {
             .collect()
     }
 
-    fn horizontal_line(width: usize, char: &str, color: Color) -> Line<'static> {
+    fn horizontal_line(width: usize, char: &str, color: Color) -> Text<'static> {
         char.repeat(width).fg(color).into()
     }
 
