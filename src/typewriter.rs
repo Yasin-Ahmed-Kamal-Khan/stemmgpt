@@ -14,7 +14,6 @@ pub struct Typewriter {
 impl Typewriter {
     pub fn new() -> Self {
         Self {
-            // ... existing fields ...
             current_message_index: 0,
             visible_chars: 0,
             last_char_time: Utc::now().timestamp_millis(),

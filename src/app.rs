@@ -109,34 +109,37 @@ impl App {
     fn render(&mut self, frame: &mut Frame) {
         let base_area = frame.size();
 
-        // 2. Create your main layout divisions
+        // Create main layout with header and content
         let main_layout = Layout::vertical([
-            Constraint::Length(3),  // Header
-            Constraint::Min(0),     // Content area
-            Constraint::Length(1)   // Footer
-        ]).split(base_area);  // Split the frame's Rect
+            Constraint::Length(HEADER_TEXT.height() as u16), // Header
+            Constraint::Min(0), // Content area
+        ]).split(base_area);
 
+        let [heading, content_area] = [main_layout[0], main_layout[1]];
 
-        let vertical = Layout::vertical([
-            Constraint::Length(HEADER_TEXT.height() as u16),
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ]).split(main_layout[1]);
+        // Split content area horizontally: left side for output, right side for input/animation
+        let horizontal_layout = Layout::horizontal([
+            Constraint::Percentage(50), // Left side - output canvas
+            Constraint::Percentage(50), // Right side - input and animation
+        ]).split(content_area);
 
-        // Destructure the chunks
-        let [heading, up, down] = [vertical[0], vertical[1], vertical[2]];
+        let [left_side, right_side] = [horizontal_layout[0], horizontal_layout[1]];
 
-        let horizontal =
-            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]);
-        let [input_box, ascii_art_box] = horizontal.areas(up);
-        let [_, boxes] = horizontal.areas(down);
+        // Split right side vertically: top for input, bottom for animation
+        let right_vertical = Layout::vertical([
+            Constraint::Percentage(50), // Input canvas
+            Constraint::Percentage(50), // Animation
+        ]).split(right_side);
 
+        let [input_area, animation_area] = [right_vertical[0], right_vertical[1]];
+
+        // Render all widgets
         frame.render_widget(self.header(), heading);
-        frame.render_widget(self.animation.ascii_art_widget(ascii_art_box.width.into()), ascii_art_box);
-        frame.render_widget(self.input_canvas(), input_box);
-        frame.render_widget(self.output_canvas(), boxes);
+        frame.render_widget(self.output_canvas(), left_side);
+        frame.render_widget(self.input_canvas(), input_area);
+        frame.render_widget(self.animation.ascii_art_widget(animation_area.width.into()), animation_area);
     }
-
+    
     fn output_canvas(&mut self) -> impl Widget + '_ {
         self.typewriter.output_canvas()
     }
