@@ -74,7 +74,6 @@ impl Typewriter {
             .wrap(Wrap { trim: false })
     }
 
-    // Modified method for adding messages
     pub fn add_message(&mut self, message: String) {
         self.messages.push(message);
         self.start_new_message();

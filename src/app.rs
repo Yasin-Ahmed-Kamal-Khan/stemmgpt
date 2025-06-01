@@ -20,7 +20,7 @@ use crate::{animation::{Animation, State}, typewriter::Typewriter};
 static HEADER_TEXT: LazyLock<Text<'static>> = LazyLock::new(|| {
     Text::from_iter([
         "".fg(Color::Cyan),
-        "         🤖 STEM GPT 🧬      ".fg(Color::Green).bold(),
+        "         🤖 STEMM GPT 🧬 ☪️    ".fg(Color::Green).bold(),
         "     AI Assistant for STEM   ".fg(Color::Blue),
         "".fg(Color::Cyan),
         "".into(),
@@ -137,9 +137,9 @@ impl App {
         frame.render_widget(self.header(), heading);
         frame.render_widget(self.output_canvas(), left_side);
         frame.render_widget(self.input_canvas(), input_area);
-        frame.render_widget(self.animation.ascii_art_widget(animation_area.width.into()), animation_area);
+        self.animation.render_ascii_art_widget(animation_area, frame);
     }
-    
+
     fn output_canvas(&mut self) -> impl Widget + '_ {
         self.typewriter.output_canvas()
     }
