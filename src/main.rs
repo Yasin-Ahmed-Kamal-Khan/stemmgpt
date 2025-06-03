@@ -27,7 +27,7 @@ fn main() -> Result<(), Report> {
             .call_method1("insert", (0, path.to_str().unwrap()))?;
 
         let ai_module = PyModule::import(py, "ai")?;
-        App::new(ai_module.into(), py).run(terminal)
+        App::new(ai_module.into()).run(terminal)
     });
 
     //let result = App::new().run(terminal);

@@ -35,9 +35,8 @@ enum InputMode {
     Editing,
 }
 
-pub struct App<'a> {
+pub struct App {
     ai: Py<PyAny>,
-    py: Python<'a>,
     exit: bool,
     /// Current value of the input box
     input: String,
@@ -50,11 +49,10 @@ pub struct App<'a> {
     animation: Animation,
 }
 
-impl App<'_> {
-    pub fn new(ai_instance: Py<PyAny>, pyy: Python<'_>) -> Self {
+impl App {
+    pub fn new(ai_instance: Py<PyAny>) -> Self {
         Self { 
             ai: ai_instance,
-            py: pyy,
             exit: false,
             input: String::new(),
             input_mode: InputMode::Editing,
@@ -214,12 +212,34 @@ impl App<'_> {
     }
 
     fn submit_message(&mut self) {
-        let reply_fn = self.ai.getattr(self.py, "reply");
-
-        self.typewriter.add_message(self.input.clone());
-        self.input.clear();
-        self.reset_cursor();
+    // Execute Python call and handle potential errors
+    match Python::with_gil(|py| {
+        // 1. Get the reply function from the Python object
+        let reply_fn = self.ai.getattr(py, "reply")?;
+        
+        // 2. Call the function with input (using self.input as the message)
+        let result = reply_fn.call1(py, (self.input.as_str(),))?;
+        
+        // 3. Convert Python result to Rust String
+        result.extract::<String>(py)
+    }) {
+        // Success case - we got a String response
+        Ok(msg) => {
+            self.typewriter.add_message(msg);
+            self.input.clear();
+            self.reset_cursor();
+        },
+        // Error case - handle Python exception
+        Err(e) => {
+            // You might want to log this error or show it to the user
+            eprintln!("Python error: {}", e);
+            // Optionally add an error message to your UI
+            self.typewriter.add_message("Error getting AI response".to_string());
+            self.input.clear();
+            self.reset_cursor();
+        }
     }
+}
 
     const fn reset_cursor(&mut self) {
         self.character_index = 0;
