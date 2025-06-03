@@ -13,9 +13,9 @@ color-eyre = "0.6"
 
 # Utilities
 itertools = "0.12"
-
-# Optional but recommended for async
 tokio = { version = "1.0", features = ["full"] }
 
 chrono = "0.4"
 rand = "0.8"
+
+rodio = "0.17"

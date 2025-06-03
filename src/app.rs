@@ -123,7 +123,7 @@ impl App {
             Constraint::Percentage(50), // Right side - input and animation
         ]).split(content_area);
 
-        let [left_side, right_side] = [horizontal_layout[0], horizontal_layout[1]];
+        let [animation_area, right_side] = [horizontal_layout[0], horizontal_layout[1]];
 
         // Split right side vertically: top for input, bottom for animation
         let right_vertical = Layout::vertical([
@@ -131,7 +131,7 @@ impl App {
             Constraint::Percentage(50), // Animation
         ]).split(right_side);
 
-        let [input_area, animation_area] = [right_vertical[0], right_vertical[1]];
+        let [input_area, left_side] = [right_vertical[0], right_vertical[1]];
 
         // Render all widgets
         frame.render_widget(self.header(), heading);

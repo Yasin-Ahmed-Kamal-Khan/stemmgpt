@@ -59,7 +59,7 @@ impl Typewriter {
         let block = Block::bordered()
             .title(" Output ")
             .title_alignment(Alignment::Left)
-            .style(Style::default().fg(Color::Red).bg(Color::Green));
+            .style(Style::default().fg(Color::Rgb(0, 0, 255)).bg(Color::White));
 
         let display_text = if self.messages.is_empty() {
             String::new()
