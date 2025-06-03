@@ -3,7 +3,7 @@ use std::{
 };
 use std::io;
 use ratatui::{layout::Alignment, style::Style, widgets::{Borders, Paragraph, Wrap}, Frame};
-use color_eyre::{owo_colors::colors::Red, Result};
+use color_eyre::{eyre::Ok, owo_colors::colors::Red, Result};
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind,
 };
@@ -16,6 +16,7 @@ use ratatui::backend::CrosstermBackend;
 use chrono::Utc;
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
+
 
 use crate::{animation::{Animation, State}, typewriter::Typewriter};
 
@@ -51,6 +52,21 @@ pub struct App {
 
 impl App {
     pub fn new(ai_instance: Py<PyAny>) -> Self {
+        Python::with_gil(|py|  -> PyResult<()> {
+            // 1. Get the reply function from the Python object
+            if let std::result::Result::Ok(init_fn) = ai_instance.getattr(py, "init") {
+                init_fn.call0(py)?; // Use call0 since there are no args
+                std::process::exit(0);
+            } else {
+                eprintln!("Failed to get 'init' attribute from Python object.");
+                std::result::Result::Ok(())
+            }
+
+            // 2. Call the function with input (using self.input as the message)
+            
+            // 3. Convert Python result to Rust String
+        });
+
         Self { 
             ai: ai_instance,
             exit: false,
@@ -212,34 +228,38 @@ impl App {
     }
 
     fn submit_message(&mut self) {
-    // Execute Python call and handle potential errors
-    match Python::with_gil(|py| {
-        // 1. Get the reply function from the Python object
-        let reply_fn = self.ai.getattr(py, "reply")?;
-        
-        // 2. Call the function with input (using self.input as the message)
-        let result = reply_fn.call1(py, (self.input.as_str(),))?;
-        
-        // 3. Convert Python result to Rust String
-        result.extract::<String>(py)
-    }) {
-        // Success case - we got a String response
-        Ok(msg) => {
-            self.typewriter.add_message(msg);
-            self.input.clear();
-            self.reset_cursor();
-        },
-        // Error case - handle Python exception
-        Err(e) => {
-            // You might want to log this error or show it to the user
-            eprintln!("Python error: {}", e);
-            // Optionally add an error message to your UI
-            self.typewriter.add_message("Error getting AI response".to_string());
-            self.input.clear();
-            self.reset_cursor();
-        }
+        // Execute Python call and handle potential errors
+        match Python::with_gil(|py| {
+            // 1. Get the reply function from the Python object
+            let reply_fn = self.ai.getattr(py, "reply")?;
+            
+            // 2. Call the function with input (using self.input as the message)
+            let result = reply_fn.call1(py, (self.input.as_str(),))?;
+        /// let result = reply_fn.call0(py)?;
+            
+            // 3. Convert Python result to Rust String
+            result.extract::<String>(py)
+            //std::result::Result::Ok("i said this.")
+            //std::result::Result::<&str, E>::Ok("i said this.")
+        }) {
+            // Success case - we got a String response
+            std::result::Result::Ok(msg) => {
+                self.typewriter.add_message(String::from(msg));
+                self.input.clear();
+                self.reset_cursor();
+            },
+            // Error case - handle Python exception
+            Err(e) => {
+                // You might want to log this error or show it to the user
+                eprintln!("Python error: {}", e);
+                // Optionally add an error message to your UI
+                self.typewriter.add_message("Error getting AI response".to_string());
+                self.input.clear();
+                self.reset_cursor();
+            }
+        }   
     }
-}
+
 
     const fn reset_cursor(&mut self) {
         self.character_index = 0;
