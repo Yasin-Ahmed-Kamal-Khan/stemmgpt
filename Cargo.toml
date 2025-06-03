@@ -7,6 +7,7 @@ edition = "2021"
 # Core terminal UI
 ratatui = { version = "0.26", features = ["crossterm"] }
 crossterm = { version = "0.27", features = ["serde"] }
+pyo3 = { version = "0.21", features = ["auto-initialize"] }
 include_dir = "0.7"
 # Error handling
 color-eyre = "0.6"

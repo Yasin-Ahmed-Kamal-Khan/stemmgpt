@@ -3,6 +3,8 @@ use ratatui::{layout::Alignment, style::{Color, Style}, widgets::{Block, Paragra
 
 use crate::animation::State;
 
+use pyo3::prelude::*;
+
 pub struct Typewriter {
     current_message_index: usize,
     visible_chars: usize,
@@ -66,6 +68,7 @@ impl Typewriter {
         } else {
             let current_message = &self.messages[self.current_message_index];
             // Take only the visible characters
+            
             current_message.chars().take(self.visible_chars).collect::<String>()
         };
 

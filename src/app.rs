@@ -14,6 +14,8 @@ use ratatui::widgets::{Block, Widget};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use chrono::Utc;
+use pyo3::prelude::*;
+use pyo3::types::PyModule;
 
 use crate::{animation::{Animation, State}, typewriter::Typewriter};
 
@@ -33,7 +35,9 @@ enum InputMode {
     Editing,
 }
 
-pub struct App {
+pub struct App<'a> {
+    ai: Py<PyAny>,
+    py: Python<'a>,
     exit: bool,
     /// Current value of the input box
     input: String,
@@ -46,9 +50,11 @@ pub struct App {
     animation: Animation,
 }
 
-impl App {
-    pub fn new() -> Self {
-        Self {
+impl App<'_> {
+    pub fn new(ai_instance: Py<PyAny>, pyy: Python<'_>) -> Self {
+        Self { 
+            ai: ai_instance,
+            py: pyy,
             exit: false,
             input: String::new(),
             input_mode: InputMode::Editing,
@@ -208,6 +214,8 @@ impl App {
     }
 
     fn submit_message(&mut self) {
+        let reply_fn = self.ai.getattr(self.py, "reply");
+
         self.typewriter.add_message(self.input.clone());
         self.input.clear();
         self.reset_cursor();
