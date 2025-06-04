@@ -37,7 +37,6 @@ enum InputMode {
 }
 
 pub struct App {
-    ai: Py<PyAny>,
     exit: bool,
     /// Current value of the input box
     input: String,
@@ -51,31 +50,15 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(ai_instance: Py<PyAny>) -> Self {
-        Python::with_gil(|py|  -> PyResult<()> {
-            // 1. Get the reply function from the Python object
-            if let std::result::Result::Ok(init_fn) = ai_instance.getattr(py, "init") {
-                init_fn.call0(py)?; // Use call0 since there are no args
-                std::process::exit(0);
-            } else {
-                eprintln!("Failed to get 'init' attribute from Python object.");
-                std::result::Result::Ok(())
-            }
-
-            // 2. Call the function with input (using self.input as the message)
-            
-            // 3. Convert Python result to Rust String
-        });
-
-        Self { 
-            ai: ai_instance,
+    pub fn new() -> Self {
+        Self {
             exit: false,
             input: String::new(),
             input_mode: InputMode::Editing,
             character_index: 0,
             typewriter: Typewriter::new(),
             animation: Animation::new(),
-          }
+        }
     }
 
     pub fn run(mut self, mut terminal: Terminal<CrosstermBackend<io::Stdout>>) -> Result<()> {
@@ -228,38 +211,26 @@ impl App {
     }
 
     fn submit_message(&mut self) {
-        // Execute Python call and handle potential errors
-        match Python::with_gil(|py| {
-            // 1. Get the reply function from the Python object
-            let reply_fn = self.ai.getattr(py, "reply")?;
-            
-            // 2. Call the function with input (using self.input as the message)
-            let result = reply_fn.call1(py, (self.input.as_str(),))?;
-        /// let result = reply_fn.call0(py)?;
-            
-            // 3. Convert Python result to Rust String
-            result.extract::<String>(py)
-            //std::result::Result::Ok("i said this.")
-            //std::result::Result::<&str, E>::Ok("i said this.")
-        }) {
-            // Success case - we got a String response
-            std::result::Result::Ok(msg) => {
-                self.typewriter.add_message(String::from(msg));
-                self.input.clear();
-                self.reset_cursor();
-            },
-            // Error case - handle Python exception
-            Err(e) => {
-                // You might want to log this error or show it to the user
-                eprintln!("Python error: {}", e);
-                // Optionally add an error message to your UI
-                self.typewriter.add_message("Error getting AI response".to_string());
-                self.input.clear();
-                self.reset_cursor();
-            }
-        }   
+        use std::fs;
+        use std::process::Command;
+        use std::io::Write;
+        // 1. Write input to file
+        if let std::result::Result::Ok(mut file) = fs::File::create("input.txt") {
+            let _ = file.write_all(self.input.as_bytes());
+        }
+        // 2. Run ai.py as a process
+        let status = Command::new("python")
+            .arg("ai.py")
+            .status();
+        // 3. Read output from file
+        let ai_reply = match fs::read_to_string("output.txt") {
+            std::result::Result::Ok(contents) => contents,
+            std::result::Result::Err(_) => "Error reading AI response".to_string(),
+        };
+        self.typewriter.add_message(ai_reply);
+        self.input.clear();
+        self.reset_cursor();
     }
-
 
     const fn reset_cursor(&mut self) {
         self.character_index = 0;
