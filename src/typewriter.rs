@@ -3,8 +3,6 @@ use ratatui::{layout::Alignment, style::{Color, Style}, widgets::{Block, Paragra
 
 use crate::animation::State;
 
-use pyo3::prelude::*;
-
 pub struct Typewriter {
     current_message_index: usize,
     visible_chars: usize,
@@ -35,8 +33,8 @@ impl Typewriter {
         // Check if enough time has passed to show next character
         if current_time - self.last_char_time >= self.char_delay_ms {
             let current_message = &self.messages[self.current_message_index];
-            //println!("Typewriter: visible_chars={}, total_chars={}", 
-              //  self.visible_chars, 
+            //println!("Typewriter: visible_chars={}, total_chars={}",
+              //  self.visible_chars,
                 //current_message.chars().count();
 
             if self.visible_chars < current_message.chars().count() {

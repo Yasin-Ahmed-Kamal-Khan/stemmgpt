@@ -1,11 +1,10 @@
 use std::{time::Duration, usize::{MAX, MIN}};
 
-use color_eyre::owo_colors::OwoColorize;
-use ratatui::{style::Style, text::Span, widgets::{Borders, Paragraph, Wrap}, Frame};
+use ratatui::{style::Style, text::Span, widgets::{Borders, Paragraph}, Frame};
 use rand::{rngs::ThreadRng, Rng};
 use chrono::Utc;
 use include_dir::{include_dir, Dir};
-use ratatui::{layout::{Alignment, Constraint, Direction, Layout, Rect}, style::{palette::material::RED, Color, Stylize}, text::{Line, Text}, widgets::{canvas::Rectangle, Block}};
+use ratatui::{layout::{Alignment, Rect}, style::{Color, Stylize}, text::{Line, Text}, widgets::Block};
 use rodio::{source::SineWave, OutputStream, Sink, Source};
 
 static DYING_FRAMES_DIR: Dir = include_dir!("src/frames/dying");
@@ -31,7 +30,6 @@ pub struct Animation {
     dying_frames: Vec<&'static str>,
     blinking_frames: Vec<&'static str>,
     idle_frames: Vec<&'static str>,
-    current_frame: usize,
     last_time: i64,
     state: State,
     talking_frame_num: usize,
@@ -39,6 +37,7 @@ pub struct Animation {
     until_talking: i32,
     blink_frame_num: usize,
     rng: ThreadRng,
+    timer: u32,
 }
 
 impl Animation {
@@ -48,7 +47,6 @@ impl Animation {
             dying_frames: get_frames(&DYING_FRAMES_DIR),
             idle_frames: get_frames(&IDLE_FRAMES_DIR),
             blinking_frames: get_frames(&BLINKING_FRAMES_DIR),
-            current_frame: 0,
             last_time: Utc::now().timestamp_millis(),
             state: State::IDLE,
             talking_frame_num: 0,
@@ -56,6 +54,7 @@ impl Animation {
             until_talking: 0,
             blink_frame_num: 0,
             rng: rand::thread_rng(),
+            timer: 1000,
         }
     }
 
@@ -71,7 +70,7 @@ impl Animation {
         let inner_animation_area = border_block.inner(animation_area);
 
 
-        let (render_area, padded_frame) = match self.state {
+        let padded_frame = match self.state {
             State::TALKING => {
                 if Utc::now().timestamp_millis() - self.last_time > 100  {
                     self.last_time = Utc::now().timestamp_millis();
@@ -86,7 +85,7 @@ impl Animation {
                 let text_lines: Vec<Line> = self.last_talking_frame.clone().into_iter()
                     .map(|line| Line::from(Span::styled(line, Style::default().fg(Color::Rgb(0, 255, 0)))))
                     .collect();
-                (inner_animation_area, Text::from(text_lines))
+                Text::from(text_lines)
             },
             State::IDLE => {
                 if self.rng.gen_range(0..100) == 0  {
@@ -96,11 +95,29 @@ impl Animation {
                 }
 
                 let current_frame = self.idle_frames[0];
-                (inner_animation_area, Text::from(Self::pad_ascii_frame(current_frame, box_width, box_height)))
+                Text::from(Self::pad_ascii_frame(current_frame, box_width, box_height))
             },
             State::DYING => {
-                let current_frame = self.dying_frames[0];
-                (inner_animation_area, Text::from(Self::pad_ascii_frame(current_frame, box_width, box_height)))
+                if self.timer > 0 {
+                    self.timer -= 1;
+                    if Utc::now().timestamp_millis() - self.last_time > 100  {
+                        self.last_time = Utc::now().timestamp_millis();
+                        self.talking_frame_num += 1;
+                        self.change_talking_frame = true;
+                    }
+                    if self.change_talking_frame {
+                        self.last_talking_frame = self.create_sound_wave(box_width, box_height, self.talking_frame_num);
+                        self.change_talking_frame = false;
+                    }
+
+                    let text_lines: Vec<Line> = self.last_talking_frame.clone().into_iter()
+                        .map(|line| Line::from(Span::styled(line, Style::default().fg(Color::Rgb(0, 255, 0)))))
+                        .collect();
+                    Text::from(text_lines)
+                } else {
+                    let current_frame = self.dying_frames[0];
+                    Text::from(Self::pad_ascii_frame(current_frame, box_width, box_height))
+                }
             },
             State::BLINKING => {
                 if Utc::now().timestamp_millis() - self.last_time > 50  {
@@ -114,13 +131,13 @@ impl Animation {
                 }
 
                 let current_frame = self.blinking_frames[self.blink_frame_num];
-                (inner_animation_area, Text::from(Self::pad_ascii_frame(current_frame, box_width, box_height)))
+                Text::from(Self::pad_ascii_frame(current_frame, box_width, box_height))
             },
         };
 
         frame.render_widget(Paragraph::new(padded_frame)
             .alignment(Alignment::Left),
-            render_area)
+            inner_animation_area)
 
     }
 

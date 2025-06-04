@@ -3,7 +3,7 @@ use std::{
 };
 use std::io;
 use ratatui::{layout::Alignment, style::Style, widgets::{Borders, Paragraph, Wrap}, Frame};
-use color_eyre::{eyre::Ok, owo_colors::colors::Red, Result};
+use color_eyre::{eyre::Ok, Result};
 use crossterm::event::{
     self, Event, KeyCode, KeyEventKind,
 };
@@ -13,10 +13,6 @@ use ratatui::text::Text;
 use ratatui::widgets::{Block, Widget};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use chrono::Utc;
-use pyo3::prelude::*;
-use pyo3::types::PyModule;
-
 
 use crate::{animation::{Animation, State}, typewriter::Typewriter};
 
@@ -90,7 +86,12 @@ impl App {
                             _ => {}
                         },
                         InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
-                            KeyCode::PageUp => self.animation.set_state(State::DYING),
+                            KeyCode::PageUp => {
+                                self.typewriter.add_message(String::from("
+                                PANIC! PANIC!
+                                "));
+                                self.animation.set_state(State::DYING)
+                            },
                             KeyCode::Enter => self.submit_message(),
                             KeyCode::Char(to_insert) => self.enter_char(to_insert),
                             KeyCode::Backspace => self.delete_char(),
@@ -224,7 +225,7 @@ impl App {
         if let std::result::Result::Ok(mut file) = fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open("memory.txt") 
+            .open("memory.txt")
         {
             let _ = writeln!(file, "User: {}", self.input);
         }
@@ -244,13 +245,14 @@ impl App {
         if let std::result::Result::Ok(mut file) = fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open("memory.txt") 
+            .open("memory.txt")
         {
             let _ = writeln!(file, "AI: {}", ai_reply);
         }
 
         // 5. Clean up output file
         let _ = fs::remove_file("output.txt");
+        let ai_reply = String::from("hello");
 
         self.typewriter.add_message(ai_reply);
         self.input.clear();
