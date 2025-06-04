@@ -9,6 +9,8 @@ if os.path.exists("input.txt"):
     os.remove("input.txt")
 if os.path.exists("output.txt"):
     os.remove("output.txt")
+if os.path.exists("memory.txt"):
+    os.remove("memory.txt")
 
 # Load model once when server starts
 print("Loading model...")
@@ -32,6 +34,8 @@ def cleanup():
         os.remove("input.txt")
     if os.path.exists("output.txt"):
         os.remove("output.txt")
+    if os.path.exists("memory.txt"):
+        os.remove("memory.txt")
 atexit.register(cleanup)
 
 messages = [
@@ -40,12 +44,20 @@ messages = [
 
 def process_input():
     try:
-        # Read input from file
+        # Read memory and input
+        memory = ""
+        if os.path.exists("memory.txt"):
+            with open("memory.txt", "r", encoding="utf-8") as f:
+                memory = f.read().strip()
+        
         with open("input.txt", "r", encoding="utf-8") as f:
             user_input = f.read().strip()
         
+        # Combine memory and new input
+        full_input = memory + "\n" + user_input if memory else user_input
+        
         # Process with LLM
-        messages.append({"role": "user", "content": user_input})
+        messages.append({"role": "user", "content": full_input})
         outputs = pipe(
             messages,
             max_new_tokens=256,

@@ -216,9 +216,17 @@ impl App {
         use std::time::Duration;
         use std::thread;
 
-        // 1. Write input to file
+        // 1. Write input to file and append to memory
         if let std::result::Result::Ok(mut file) = fs::File::create("input.txt") {
             let _ = file.write_all(self.input.as_bytes());
+        }
+        // Append user input to memory
+        if let std::result::Result::Ok(mut file) = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("memory.txt") 
+        {
+            let _ = writeln!(file, "User: {}", self.input);
         }
 
         // 2. Wait for output file to be created
@@ -232,7 +240,16 @@ impl App {
             std::result::Result::Err(_) => "Error reading AI response".to_string(),
         };
 
-        // 4. Clean up output file
+        // 4. Append AI response to memory
+        if let std::result::Result::Ok(mut file) = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("memory.txt") 
+        {
+            let _ = writeln!(file, "AI: {}", ai_reply);
+        }
+
+        // 5. Clean up output file
         let _ = fs::remove_file("output.txt");
 
         self.typewriter.add_message(ai_reply);
