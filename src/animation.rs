@@ -18,6 +18,7 @@ fn get_frames(dir: &'static Dir<'static>) -> Vec<&'static str> {
         .collect()
 }
 
+#[derive(Debug)]
 pub enum State {
     TALKING,
     IDLE,

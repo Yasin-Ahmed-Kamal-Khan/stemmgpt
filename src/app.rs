@@ -212,21 +212,29 @@ impl App {
 
     fn submit_message(&mut self) {
         use std::fs;
-        use std::process::Command;
         use std::io::Write;
+        use std::time::Duration;
+        use std::thread;
+
         // 1. Write input to file
         if let std::result::Result::Ok(mut file) = fs::File::create("input.txt") {
             let _ = file.write_all(self.input.as_bytes());
         }
-        // 2. Run ai.py as a process
-        let status = Command::new("python")
-            .arg("ai.py")
-            .status();
+
+        // 2. Wait for output file to be created
+        while fs::metadata("output.txt").is_err() {
+            thread::sleep(Duration::from_millis(100));
+        }
+
         // 3. Read output from file
         let ai_reply = match fs::read_to_string("output.txt") {
             std::result::Result::Ok(contents) => contents,
             std::result::Result::Err(_) => "Error reading AI response".to_string(),
         };
+
+        // 4. Clean up output file
+        let _ = fs::remove_file("output.txt");
+
         self.typewriter.add_message(ai_reply);
         self.input.clear();
         self.reset_cursor();
