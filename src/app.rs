@@ -252,7 +252,6 @@ impl App {
 
         // 5. Clean up output file
         let _ = fs::remove_file("output.txt");
-        let ai_reply = String::from("hello");
 
         self.typewriter.add_message(ai_reply);
         self.input.clear();
